@@ -53,11 +53,11 @@ export class WebSocketClient extends EventEmitter {
     this.socket.onclose = (event) => {
       this.heartbeat.stop();
       this.emit("close", event);
-      this.scheduleReconnect();
     };
 
     this.socket.onerror = (event) => {
       this.emit("error", event);
+      this.scheduleReconnect();
     };
   }
 
@@ -76,10 +76,15 @@ export class WebSocketClient extends EventEmitter {
       this.config.maxReconnectDelay
     );
 
+    // 添加随机抖动（避免集群同时重连的"惊群效应"）
+    const jitterRatio = 0.2; // ±20%的随机波动
+    const jitter = delay * jitterRatio * (Math.random() * 2 - 1); // [-0.2,0.2]范围
+    const actualDelay = Math.max(1000, delay + jitter); // 保证至少1秒
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts++;
       this.connect();
-    }, delay);
+    }, actualDelay);
   }
 
   private flushMessageQueue(): void {

@@ -16,6 +16,19 @@
       client.on("message", (data) => {
         document.getElementById("messages").innerHTML += `<li>${data}</li>`;
       });
+
+      client.on("error", (err) => {
+        console.log(err);
+      });
+
+      client.on("close", (data) => {
+        console.log(data);
+      });
+
+      setTimeout(() => {
+        console.log("Closing");
+        manager.closeAll();
+      }, 2000);
     </script>
   </head>
   <body>
