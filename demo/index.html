@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebSocket Pro Demo</title>
+    <script type="module">
+      import { createWebSocketManager } from "../dist/websocket-pro.es.js";
+
+      const manager = createWebSocketManager();
+      const client = manager.connect("wss://echo.websocket.org");
+
+      client.on("open", () => {
+        document.getElementById("status").textContent = "Connected";
+        client.send("Hello from demo!");
+      });
+
+      client.on("message", (data) => {
+        document.getElementById("messages").innerHTML += `<li>${data}</li>`;
+      });
+    </script>
+  </head>
+  <body>
+    <h1>WebSocket Pro Demo</h1>
+    <div id="status">Connecting...</div>
+    <ul id="messages"></ul>
+  </body>
+</html>
