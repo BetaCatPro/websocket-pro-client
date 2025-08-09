@@ -1,0 +1,33 @@
+name: Publish to NPM
+
+on:
+  push:
+    branches: [master] # 只在master分支推送时触发
+    tags: ["v*.*.*"] # 同时监听语义化版本tag
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>高可用WebSocket框架</title>
+    <style>
+      :root {
+        --primary: #4361ee;
+        --success: #06d6a0;
+        --warning: #ffd166;
+        --danger: #ef476f;
+        --dark: #073b4c;
+      }
+
+      body {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f8f9fa;
+        color: #212529;
+      }
+
+      .container {
+        display: grid;
+        grid-template-columns: 1fr 350px;
+        gap: 25px;
+      }
+
+      .panel {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        padding: 25px;
+        margin-bottom: 25px;
+        transition: transform 0.3s ease;
+      }
+
+      .panel:hover {
+        transform: translateY(-5px);
+      }
+
+      h1,
+      h2 {
+        color: var(--dark);
+        margin-top: 0;
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+
+      .connected {
+        background: var(--success);
+      }
+      .connecting {
+        background: var(--warning);
+      }
+      .disconnected {
+        background: var(--danger);
+      }
+
+      button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+      }
+
+      button:hover {
+        opacity: 0.9;
+        transform: translateY(-2px);
+      }
+
+      button:disabled {
+        background: #adb5bd;
+        cursor: not-allowed;
+      }
+
+      .btn-danger {
+        background: var(--danger);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 15px;
+        margin: 20px 0;
+      }
+
+      .stat-card {
+        background: #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        text-align: center;
+      }
+
+      .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--primary);
+      }
+
+      .log-container {
+        height: 300px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        background: #f8f9fa;
+        font-family: monospace;
+        font-size: 14px;
+      }
+
+      .log-entry {
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed #e9ecef;
+      }
+
+      .log-timestamp {
+        color: #6c757d;
+        margin-right: 10px;
+      }
+
+      .log-info {
+        color: #4361ee;
+      }
+      .log-success {
+        color: #06d6a0;
+      }
+      .log-warning {
+        color: #ffd166;
+      }
+      .log-error {
+        color: #ef476f;
+      }
+
+      .control-group {
+        display: flex;
+        gap: 10px;
+        margin: 20px 0;
+      }
+
+      input[type="text"] {
+        flex: 1;
+        padding: 10px 15px;
+        border: 1px solid #ced4da;
+        border-radius: 8px;
+        font-size: 16px;
+      }
+
+      .editable:hover,
+      .editable-list li:hover {
+        background-color: #f0f7ff;
+        cursor: pointer;
+      }
+
+      [contenteditable="true"] {
+        outline: none;
+        background-color: #f8f9fa;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>高可用WebSocket框架实现</h1>
+
+    <div class="container">
+      <!-- 左侧面板 -->
+      <div>
+        <div class="panel">
+          <h2>
+            连接状态:
+            <span id="statusText" class="disconnected">已断开</span>
+          </h2>
+
+          <div class="stats">
+            <div class="stat-card">
+              <div>重连次数</div>
+              <div id="reconnectCount" class="stat-value">0</div>
+            </div>
+            <div class="stat-card">
+              <div>心跳间隔</div>
+              <div id="heartbeatInterval" class="stat-value">25s</div>
+            </div>
+            <div class="stat-card">
+              <div>消息队列</div>
+              <div id="queueSize" class="stat-value">0</div>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <button id="connectBtn">连接</button>
+            <button id="disconnectBtn" class="btn-danger" disabled>断开</button>
+            <button id="simulateBtn">模拟网络波动</button>
+          </div>
+
+          <h3>消息发送</h3>
+          <div class="control-group">
+            <input
+              type="text"
+              id="messageInput"
+              placeholder="输入要发送的消息"
+            />
+            <button id="sendBtn">发送</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>系统日志</h2>
+          <div id="logContainer" class="log-container"></div>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div>
+        <div class="panel">
+          <h2>
+            技术说明
+            <button
+              id="editTechBtn"
+              style="float: right; font-size: 14px; padding: 2px 8px"
+            >
+              编辑
+            </button>
+            <button
+              id="saveTechBtn"
+              style="
+                float: right;
+                font-size: 14px;
+                padding: 2px 8px;
+                display: none;
+              "
+            >
+              保存
+            </button>
+          </h2>
+
+          <div id="techContent">
+            <h3>心跳机制</h3>
+            <p class="editable" data-key="heartbeat">
+              每25秒发送PING，10秒内未收到PONG则判定为断线
+            </p>
+
+            <h3>重连策略</h3>
+            <ul class="editable-list" data-key="reconnect">
+              <li>初始重连延迟: 1秒</li>
+              <li>指数退避因子: 1.5</li>
+              <li>最大重连延迟: 30秒</li>
+              <li>最大重连次数: 10次</li>
+            </ul>
+
+            <h3>消息队列</h3>
+            <p class="editable" data-key="messageQueue">
+              断线期间的消息会缓存，连接恢复后自动发送
+            </p>
+
+            <h3>状态管理</h3>
+            <p class="editable" data-key="statusManagement">
+              精确管理连接状态：连接中、已连接、断开中、已断开
+            </p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>性能指标</h2>
+          <div id="metrics">
+            <p>连接延迟: <span id="latency">0</span>ms</p>
+            <p>消息吞吐量: <span id="throughput">0</span> msg/s</p>
+            <p>数据压缩率: <span id="compression">0</span>%</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module">
+      import { createWebSocketManager } from "../dist/websocket-pro.es.js";
+
+      // 初始化管理器
+      const manager = createWebSocketManager({
+        maxReconnectAttempts: 10,
+        reconnectDelay: 1000,
+        reconnectExponent: 1.5,
+        maxReconnectDelay: 30000,
+        heartbeatInterval: 25000,
+        heartbeatTimeout: 10000,
+      });
+
+      // 创建连接
+      let client = manager.connect("wss://echo.websocket.org");
+
+      // DOM 元素
+      const elements = {
+        statusText: document.getElementById("statusText"),
+        reconnectCount: document.getElementById("reconnectCount"),
+        heartbeatInterval: document.getElementById("heartbeatInterval"),
+        queueSize: document.getElementById("queueSize"),
+        latency: document.getElementById("latency"),
+        throughput: document.getElementById("throughput"),
+        compression: document.getElementById("compression"),
+        logContainer: document.getElementById("logContainer"),
+        connectBtn: document.getElementById("connectBtn"),
+        disconnectBtn: document.getElementById("disconnectBtn"),
+        simulateBtn: document.getElementById("simulateBtn"),
+        messageInput: document.getElementById("messageInput"),
+        sendBtn: document.getElementById("sendBtn"),
+      };
+
+      // 添加日志
+      function addLog(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement("div");
+        logEntry.className = `log-entry log-${type}`;
+        logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
+        elements.logContainer.prepend(logEntry);
+      }
+
+      // 更新UI状态
+      function updateUI(status) {
+        elements.statusText.className = "";
+        elements.statusText.textContent = {
+          disconnected: "已断开",
+          connecting: "连接中...",
+          connected: "已连接",
+          closing: "断开中...",
+        }[status];
+        elements.statusText.classList.add(status);
+
+        elements.connectBtn.disabled = status !== "disconnected";
+        elements.disconnectBtn.disabled = status === "disconnected";
+      }
+
+      // 连接事件处理
+      client.on("open", () => {
+        updateUI("connected");
+        addLog("连接成功", "success");
+      });
+
+      client.on("close", (event) => {
+        updateUI("disconnected");
+        addLog(
+          `连接关闭: ${event.code} ${event.reason || ""}`,
+          event.code === 1000 ? "info" : "warning"
+        );
+      });
+
+      client.on("error", (error) => {
+        addLog(`错误: ${error.message}`, "error");
+      });
+
+      client.on("reconnect", (attempt) => {
+        elements.reconnectCount.textContent = attempt;
+        addLog(`尝试重连 (${attempt}/10)`, "warning");
+      });
+
+      client.on("heartbeat", (type) => {
+        if (type === "PONG") {
+          const now = Date.now();
+          const latency = now - lastPingTime;
+          elements.latency.textContent = latency;
+          addLog(`收到PONG，延迟: ${latency}ms`, "success");
+        } else {
+          lastPingTime = Date.now();
+          addLog("发送PING", "info");
+        }
+      });
+
+      client.on("message", (data) => {
+        addLog(`收到消息: ${data}`, "info");
+      });
+
+      // 交互事件
+      elements.connectBtn.addEventListener("click", () => {
+        client = manager.connect("wss://echo.websocket.org");
+        updateUI("connecting");
+      });
+
+      elements.disconnectBtn.addEventListener("click", () => {
+        client.close(1000, "用户手动关闭");
+        updateUI("closing");
+      });
+
+      elements.simulateBtn.addEventListener("click", () => {
+        if (client.status === "connected") {
+          addLog("模拟网络波动 - 强制断开连接", "warning");
+          client.socket.close(1006, "模拟网络错误");
+        }
+      });
+
+      elements.sendBtn.addEventListener("click", () => {
+        const message = elements.messageInput.value.trim();
+        if (message) {
+          client
+            .send(message)
+            .then(() => {
+              addLog(`发送成功: ${message}`, "info");
+              elements.messageInput.value = "";
+            })
+            .catch((err) => {
+              addLog(`发送失败: ${err.message}`, "error");
+            });
+        }
+      });
+
+      elements.messageInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          elements.sendBtn.click();
+        }
+      });
+
+      // 初始化
+      let lastPingTime = 0;
+      updateUI("disconnected");
+      elements.heartbeatInterval.textContent = "25s";
+      addLog("系统初始化完成", "info");
+
+      // 编辑/保存技术说明
+      const editTechBtn = document.getElementById("editTechBtn");
+      const saveTechBtn = document.getElementById("saveTechBtn");
+      const techContent = document.getElementById("techContent");
+      let originalContent = {};
+
+      editTechBtn.addEventListener("click", () => {
+        // 进入编辑模式
+        originalContent = {};
+        techContent
+          .querySelectorAll(".editable, .editable-list li")
+          .forEach((el) => {
+            const key = el.parentElement.dataset.key || el.dataset.key;
+            originalContent[key] = el.innerHTML;
+            el.contentEditable = true;
+            el.style.borderBottom = "1px dashed #4361ee";
+            el.style.padding = "2px";
+          });
+
+        editTechBtn.style.display = "none";
+        saveTechBtn.style.display = "inline-block";
+      });
+
+      saveTechBtn.addEventListener("click", () => {
+        // 保存修改
+        techContent
+          .querySelectorAll(".editable, .editable-list li")
+          .forEach((el) => {
+            el.contentEditable = false;
+            el.style.borderBottom = "none";
+            el.style.padding = "0";
+          });
+        // 这里可以添加保存到本地存储或服务器的逻辑
+        // localStorage.setItem('techConfig', JSON.stringify(getTechConfig()));
+
+        editTechBtn.style.display = "inline-block";
+        saveTechBtn.style.display = "none";
+        addLog("技术说明已更新", "success");
+      });
+
+      // 获取当前技术配置
+      function getTechConfig() {
+        const config = {};
+        techContent
+          .querySelectorAll(".editable, .editable-list li")
+          .forEach((el) => {
+            const key = el.parentElement.dataset.key || el.dataset.key;
+            config[key] = el.innerHTML;
+          });
+        return config;
+      }
+
+      // 恢复默认值
+      function restoreDefaults() {
+        Object.entries(originalContent).forEach(([key, value]) => {
+          const el = techContent.querySelector(`[data-key="${key}"]`);
+          if (el) el.innerHTML = value;
+        });
+      }
+    </script>
+  </body>
+</html>
