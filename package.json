@@ -1,6 +1,6 @@
 {
   "name": "websocket-pro-client",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "High-performance WebSocket client with auto-reconnect, heartbeat and priority messaging",
   "keywords": [
     "websocket",
