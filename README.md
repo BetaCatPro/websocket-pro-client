@@ -55,10 +55,17 @@ npm run demo
 ## 贡献指南
 
 1. Fork 仓库
-2. 创建特性分支 (`git checkout -b dev/feature/fix-xxx`)
+2. 创建分支 (`git checkout -b dev/feature/fix-xxx`)
 3. 提交更改 (`git commit -am 'feat/fix xxx'`)
 4. 推送到分支 (`git push origin dev/feature/fix-xxx`)
 5. 创建 Pull Request
+
+## 后续工作
+
+1. 自定义心跳包
+2. 添加更多配置项
+3. 添加完整测试用例(单元测试/集成测试)
+4. 完善说明 API 文档
 
 ## 许可证
 
