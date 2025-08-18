@@ -1,485 +1,359 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>高可用WebSocket框架</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Pro Client (Vue 3)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
-      :root {
-        --primary: #4361ee;
-        --success: #06d6a0;
-        --warning: #ffd166;
-        --danger: #ef476f;
-        --dark: #073b4c;
+      .message-list {
+        scrollbar-width: thin;
+        scrollbar-color: #4b5563 #1f2937;
       }
-
-      body {
-        font-family: "Segoe UI", system-ui, sans-serif;
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background: #f8f9fa;
-        color: #212529;
+      .connection-status.connected {
+        animation: pulse 2s infinite;
       }
-
-      .container {
-        display: grid;
-        grid-template-columns: 1fr 350px;
-        gap: 25px;
-      }
-
-      .panel {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        padding: 25px;
-        margin-bottom: 25px;
-        transition: transform 0.3s ease;
-      }
-
-      .panel:hover {
-        transform: translateY(-5px);
-      }
-
-      h1,
-      h2 {
-        color: var(--dark);
-        margin-top: 0;
-      }
-
-      .status-indicator {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        margin-right: 8px;
-      }
-
-      .connected {
-        background: var(--success);
-      }
-      .connecting {
-        background: var(--warning);
-      }
-      .disconnected {
-        background: var(--danger);
-      }
-
-      button {
-        background: var(--primary);
-        color: white;
-        border: none;
-        padding: 10px 18px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: 600;
-        transition: all 0.2s;
-      }
-
-      button:hover {
-        opacity: 0.9;
-        transform: translateY(-2px);
-      }
-
-      button:disabled {
-        background: #adb5bd;
-        cursor: not-allowed;
-      }
-
-      .btn-danger {
-        background: var(--danger);
-      }
-
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 15px;
-        margin: 20px 0;
-      }
-
-      .stat-card {
-        background: #e9ecef;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-      }
-
-      .stat-value {
-        font-size: 24px;
-        font-weight: 700;
-        color: var(--primary);
-      }
-
-      .log-container {
-        height: 300px;
-        overflow-y: auto;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        padding: 15px;
-        background: #f8f9fa;
-        font-family: monospace;
-        font-size: 14px;
-      }
-
-      .log-entry {
-        margin-bottom: 8px;
-        padding-bottom: 8px;
-        border-bottom: 1px dashed #e9ecef;
-      }
-
-      .log-timestamp {
-        color: #6c757d;
-        margin-right: 10px;
-      }
-
-      .log-info {
-        color: #4361ee;
-      }
-      .log-success {
-        color: #06d6a0;
-      }
-      .log-warning {
-        color: #ffd166;
-      }
-      .log-error {
-        color: #ef476f;
-      }
-
-      .control-group {
-        display: flex;
-        gap: 10px;
-        margin: 20px 0;
-      }
-
-      input[type="text"] {
-        flex: 1;
-        padding: 10px 15px;
-        border: 1px solid #ced4da;
-        border-radius: 8px;
-        font-size: 16px;
-      }
-
-      .editable:hover,
-      .editable-list li:hover {
-        background-color: #f0f7ff;
-        cursor: pointer;
-      }
-
-      [contenteditable="true"] {
-        outline: none;
-        background-color: #f8f9fa;
+      @keyframes pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+        }
+        70% {
+          box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+        }
       }
     </style>
   </head>
-  <body>
-    <h1>高可用WebSocket框架实现</h1>
+  <body class="bg-gray-900 text-gray-100 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+      <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-6 text-green-400">
+          WebSocket Pro Client (Vue 3)
+        </h1>
 
-    <div class="container">
-      <!-- 左侧面板 -->
-      <div>
-        <div class="panel">
-          <h2>
-            连接状态:
-            <span id="statusText" class="disconnected">已断开</span>
-          </h2>
-
-          <div class="stats">
-            <div class="stat-card">
-              <div>重连次数</div>
-              <div id="reconnectCount" class="stat-value">0</div>
+        <!-- 连接控制 -->
+        <div class="bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-medium mb-1"
+                >WebSocket URL</label
+              >
+              <input
+                v-model="wsUrl"
+                type="text"
+                class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm"
+              />
             </div>
-            <div class="stat-card">
-              <div>心跳间隔</div>
-              <div id="heartbeatInterval" class="stat-value">25s</div>
+            <div class="flex items-end space-x-2">
+              <button
+                @click="connect"
+                :disabled="isConnected"
+                class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md transition disabled:opacity-50"
+              >
+                Connect
+              </button>
+              <button
+                @click="disconnect"
+                :disabled="!isConnected"
+                class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md transition disabled:opacity-50"
+              >
+                Disconnect
+              </button>
             </div>
-            <div class="stat-card">
-              <div>消息队列</div>
-              <div id="queueSize" class="stat-value">0</div>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <button id="connectBtn">连接</button>
-            <button id="disconnectBtn" class="btn-danger" disabled>断开</button>
-            <button id="simulateBtn">模拟网络波动</button>
-          </div>
-
-          <h3>消息发送</h3>
-          <div class="control-group">
-            <input
-              type="text"
-              id="messageInput"
-              placeholder="输入要发送的消息"
-            />
-            <button id="sendBtn">发送</button>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>系统日志</h2>
-          <div id="logContainer" class="log-container"></div>
-        </div>
-      </div>
-
-      <!-- 右侧面板 -->
-      <div>
-        <div class="panel">
-          <h2>
-            技术说明
-            <button
-              id="editTechBtn"
-              style="float: right; font-size: 14px; padding: 2px 8px"
+            <div
+              :class="['p-4 rounded-md', isConnected ? 'bg-green-900/50 connection-status connected' : 'bg-gray-700']"
             >
-              编辑
+              <div class="flex items-center">
+                <div
+                  :class="['w-3 h-3 rounded-full mr-2', isConnected ? 'bg-green-400' : 'bg-gray-400']"
+                ></div>
+                <span>{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
+              </div>
+              <div v-if="lastPongTime" class="text-xs mt-2 text-gray-400">
+                Last PONG: {{ lastPongTime }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- 配置面板 -->
+          <div class="bg-gray-800 rounded-lg p-6 shadow-lg">
+            <h2 class="text-xl font-semibold mb-4 text-blue-300">
+              Configuration
+            </h2>
+            <div class="space-y-4">
+              <div>
+                <label class="flex items-center">
+                  <input
+                    type="checkbox"
+                    v-model="config.isNeedHeartbeat"
+                    @change="updateConfig({ isNeedHeartbeat: config.isNeedHeartbeat })"
+                    class="mr-2"
+                  />
+                  Enable Heartbeat
+                </label>
+              </div>
+
+              <template v-if="config.isNeedHeartbeat">
+                <div class="space-y-3 pl-6">
+                  <div>
+                    <label class="block text-sm font-medium mb-1"
+                      >Interval (ms)</label
+                    >
+                    <input
+                      type="number"
+                      v-model.number="config.heartbeat.interval"
+                      @change="updateHeartbeatConfig"
+                      class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium mb-1"
+                      >Timeout (ms)</label
+                    >
+                    <input
+                      type="number"
+                      v-model.number="config.heartbeat.timeout"
+                      @change="updateHeartbeatConfig"
+                      class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
+                    />
+                  </div>
+                </div>
+              </template>
+
+              <div>
+                <label class="block text-sm font-medium mb-1"
+                  >Max Reconnect Attempts</label
+                >
+                <input
+                  type="number"
+                  v-model.number="config.maxReconnectAttempts"
+                  @change="updateConfig({ maxReconnectAttempts: config.maxReconnectAttempts })"
+                  class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息面板 -->
+          <div class="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
+            <h2 class="text-xl font-semibold mb-4 text-purple-300">
+              Messaging
+            </h2>
+            <div class="mb-4">
+              <label class="block text-sm font-medium mb-1">Message</label>
+              <div class="flex">
+                <input
+                  type="text"
+                  v-model="message"
+                  @keyup.enter="sendMessage"
+                  :disabled="!isConnected"
+                  class="flex-1 bg-gray-700 border border-gray-600 rounded-l-md px-3 py-2 text-sm disabled:opacity-50"
+                  placeholder="Type your message..."
+                />
+                <button
+                  @click="sendMessage"
+                  :disabled="!isConnected || !message.trim()"
+                  class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-r-md transition disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+
+            <div class="h-64 bg-gray-900 rounded-md overflow-hidden">
+              <div class="message-list h-full overflow-y-auto p-3 space-y-2">
+                <div
+                  v-for="(msg, index) in messages"
+                  :key="index"
+                  :class="{
+                  'bg-blue-900/50 text-blue-100': msg.type === 'sent',
+                  'bg-green-900/50 text-green-100': msg.type === 'received',
+                  'bg-red-900/50 text-red-100': msg.type === 'error',
+                  'bg-gray-700/50 text-gray-300': msg.type === 'system'
+                }"
+                  class="p-2 rounded-md text-sm break-words"
+                >
+                  {{ msg.text }}
+                </div>
+                <div
+                  v-if="messages.length === 0"
+                  class="text-gray-500 text-center mt-20"
+                >
+                  No messages yet
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 测试按钮 -->
+        <div class="mt-6 bg-gray-800 rounded-lg p-6 shadow-lg">
+          <h2 class="text-xl font-semibold mb-4 text-yellow-300">
+            Quick Tests
+          </h2>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button
+              @click="client?.reconnect()"
+              :disabled="!isConnected"
+              class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-3 rounded-md text-sm transition disabled:opacity-50"
+            >
+              Force Reconnect
             </button>
             <button
-              id="saveTechBtn"
-              style="
-                float: right;
-                font-size: 14px;
-                padding: 2px 8px;
-                display: none;
-              "
+              @click="sendTestMessage"
+              :disabled="!isConnected"
+              class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-md text-sm transition disabled:opacity-50"
             >
-              保存
+              Send Test Message
             </button>
-          </h2>
-
-          <div id="techContent">
-            <h3>心跳机制</h3>
-            <p class="editable" data-key="heartbeat">
-              每25秒发送PING，10秒内未收到PONG则判定为断线
-            </p>
-
-            <h3>重连策略</h3>
-            <ul class="editable-list" data-key="reconnect">
-              <li>初始重连延迟: 1秒</li>
-              <li>指数退避因子: 1.5</li>
-              <li>最大重连延迟: 30秒</li>
-              <li>最大重连次数: 10次</li>
-            </ul>
-
-            <h3>消息队列</h3>
-            <p class="editable" data-key="messageQueue">
-              断线期间的消息会缓存，连接恢复后自动发送
-            </p>
-
-            <h3>状态管理</h3>
-            <p class="editable" data-key="statusManagement">
-              精确管理连接状态：连接中、已连接、断开中、已断开
-            </p>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2>性能指标</h2>
-          <div id="metrics">
-            <p>连接延迟: <span id="latency">0</span>ms</p>
-            <p>消息吞吐量: <span id="throughput">0</span> msg/s</p>
-            <p>数据压缩率: <span id="compression">0</span>%</p>
+            <button
+              @click="toggleHeartbeat"
+              class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-3 rounded-md text-sm transition"
+            >
+              Toggle Heartbeat
+            </button>
+            <button
+              @click="clearLogs"
+              class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md text-sm transition"
+            >
+              Clear Logs
+            </button>
           </div>
         </div>
       </div>
     </div>
+
     <script type="module">
       import { createWebSocketManager } from "../dist/websocket-pro.es.js";
 
-      // 初始化管理器
-      const manager = createWebSocketManager({
-        maxReconnectAttempts: 10,
-        reconnectDelay: 1000,
-        reconnectExponent: 1.5,
-        maxReconnectDelay: 30000,
-        heartbeatInterval: 25000,
-        heartbeatTimeout: 10000,
-      });
+      const app = Vue.createApp({
+        data() {
+          return {
+            wsUrl: "wss://echo.websocket.org",
+            message: "",
+            messages: [],
+            isConnected: false,
+            config: {
+              isNeedHeartbeat: true,
+              heartbeat: {
+                interval: 10000,
+                timeout: 5000,
+                message: "PING",
+              },
+              maxReconnectAttempts: 5,
+              reconnectDelay: 1000,
+            },
+            client: null,
+            reconnectAttempts: 0,
+            lastPongTime: null,
+          };
+        },
+        methods: {
+          connect() {
+            if (this.client) {
+              this.client.close();
+            }
 
-      // 创建连接
-      let client = manager.connect("wss://echo.websocket.org");
+            this.client = createWebSocketManager(this.config).connect(
+              this.wsUrl
+            );
+            this.isConnected = false;
+            this.addMessage("system", `Connecting to ${this.wsUrl}...`);
 
-      // DOM 元素
-      const elements = {
-        statusText: document.getElementById("statusText"),
-        reconnectCount: document.getElementById("reconnectCount"),
-        heartbeatInterval: document.getElementById("heartbeatInterval"),
-        queueSize: document.getElementById("queueSize"),
-        latency: document.getElementById("latency"),
-        throughput: document.getElementById("throughput"),
-        compression: document.getElementById("compression"),
-        logContainer: document.getElementById("logContainer"),
-        connectBtn: document.getElementById("connectBtn"),
-        disconnectBtn: document.getElementById("disconnectBtn"),
-        simulateBtn: document.getElementById("simulateBtn"),
-        messageInput: document.getElementById("messageInput"),
-        sendBtn: document.getElementById("sendBtn"),
-      };
-
-      // 添加日志
-      function addLog(message, type = "info") {
-        const timestamp = new Date().toLocaleTimeString();
-        const logEntry = document.createElement("div");
-        logEntry.className = `log-entry log-${type}`;
-        logEntry.innerHTML = `<span class="log-timestamp">[${timestamp}]</span> ${message}`;
-        elements.logContainer.prepend(logEntry);
-      }
-
-      // 更新UI状态
-      function updateUI(status) {
-        elements.statusText.className = "";
-        elements.statusText.textContent = {
-          disconnected: "已断开",
-          connecting: "连接中...",
-          connected: "已连接",
-          closing: "断开中...",
-        }[status];
-        elements.statusText.classList.add(status);
-
-        elements.connectBtn.disabled = status !== "disconnected";
-        elements.disconnectBtn.disabled = status === "disconnected";
-      }
-
-      // 连接事件处理
-      client.on("open", () => {
-        updateUI("connected");
-        addLog("连接成功", "success");
-      });
-
-      client.on("close", (event) => {
-        updateUI("disconnected");
-        addLog(
-          `连接关闭: ${event.code} ${event.reason || ""}`,
-          event.code === 1000 ? "info" : "warning"
-        );
-      });
-
-      client.on("error", (error) => {
-        addLog(`错误: ${error.message}`, "error");
-      });
-
-      client.on("reconnect", (attempt) => {
-        elements.reconnectCount.textContent = attempt;
-        addLog(`尝试重连 (${attempt}/10)`, "warning");
-      });
-
-      client.on("heartbeat", (type) => {
-        if (type === "PONG") {
-          const now = Date.now();
-          const latency = now - lastPingTime;
-          elements.latency.textContent = latency;
-          addLog(`收到PONG，延迟: ${latency}ms`, "success");
-        } else {
-          lastPingTime = Date.now();
-          addLog("发送PING", "info");
-        }
-      });
-
-      client.on("message", (data) => {
-        addLog(`收到消息: ${data}`, "info");
-      });
-
-      // 交互事件
-      elements.connectBtn.addEventListener("click", () => {
-        client = manager.connect("wss://echo.websocket.org");
-        updateUI("connecting");
-      });
-
-      elements.disconnectBtn.addEventListener("click", () => {
-        client.close(1000, "用户手动关闭");
-        updateUI("closing");
-      });
-
-      elements.simulateBtn.addEventListener("click", () => {
-        if (client.status === "connected") {
-          addLog("模拟网络波动 - 强制断开连接", "warning");
-          client.socket.close(1006, "模拟网络错误");
-        }
-      });
-
-      elements.sendBtn.addEventListener("click", () => {
-        const message = elements.messageInput.value.trim();
-        if (message) {
-          client
-            .send(message)
-            .then(() => {
-              addLog(`发送成功: ${message}`, "info");
-              elements.messageInput.value = "";
-            })
-            .catch((err) => {
-              addLog(`发送失败: ${err.message}`, "error");
+            this.client.on("open", () => {
+              this.isConnected = true;
+              this.addMessage("system", "Connected successfully!");
             });
-        }
+
+            this.client.on("message", (data) => {
+              if (data === "PONG") {
+                this.lastPongTime = new Date().toLocaleTimeString();
+                return;
+              }
+              this.addMessage("received", data);
+            });
+
+            this.client.on("close", () => {
+              this.isConnected = false;
+              this.addMessage("system", "Disconnected");
+            });
+
+            this.client.on("error", (err) => {
+              this.addMessage("error", `Error: ${err.message || err}`);
+            });
+
+            this.client.on("reconnect", (attempt) => {
+              this.reconnectAttempts = attempt;
+              this.addMessage("system", `Reconnecting (attempt ${attempt})...`);
+            });
+
+            this.client.on("timeout", () => {
+              this.addMessage("error", "Heartbeat timeout! Reconnecting...");
+            });
+          },
+          disconnect() {
+            if (this.client) {
+              this.client.close();
+              this.client = null;
+            }
+          },
+          sendMessage() {
+            if (this.message.trim() && this.client) {
+              this.client
+                .send(this.message)
+                .then(() => {
+                  this.addMessage("sent", this.message);
+                  this.message = "";
+                })
+                .catch((err) => {
+                  this.addMessage("error", `Failed to send: ${err.message}`);
+                });
+            }
+          },
+          sendTestMessage() {
+            const testMsg = `Test message ${new Date().toLocaleTimeString()}`;
+            this.message = testMsg;
+            this.sendMessage();
+          },
+          addMessage(type, text) {
+            this.messages.push({ type, text });
+            // 自动滚动到底部
+            this.$nextTick(() => {
+              const container = document.querySelector(".message-list");
+              if (container) container.scrollTop = container.scrollHeight;
+            });
+          },
+          updateConfig(newConfig) {
+            const mergedConfig = { ...this.config, ...newConfig };
+            this.config = mergedConfig;
+            if (this.client) {
+              this.client.updateConfig(mergedConfig);
+            }
+          },
+          updateHeartbeatConfig() {
+            this.updateConfig({
+              heartbeat: this.config.heartbeat,
+            });
+          },
+          toggleHeartbeat() {
+            this.config.isNeedHeartbeat = !this.config.isNeedHeartbeat;
+            this.updateConfig({ isNeedHeartbeat: this.config.isNeedHeartbeat });
+          },
+          clearLogs() {
+            this.messages = [];
+            this.reconnectAttempts = 0;
+          },
+        },
       });
 
-      elements.messageInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter") {
-          elements.sendBtn.click();
-        }
-      });
-
-      // 初始化
-      let lastPingTime = 0;
-      updateUI("disconnected");
-      elements.heartbeatInterval.textContent = "25s";
-      addLog("系统初始化完成", "info");
-
-      // 编辑/保存技术说明
-      const editTechBtn = document.getElementById("editTechBtn");
-      const saveTechBtn = document.getElementById("saveTechBtn");
-      const techContent = document.getElementById("techContent");
-      let originalContent = {};
-
-      editTechBtn.addEventListener("click", () => {
-        // 进入编辑模式
-        originalContent = {};
-        techContent
-          .querySelectorAll(".editable, .editable-list li")
-          .forEach((el) => {
-            const key = el.parentElement.dataset.key || el.dataset.key;
-            originalContent[key] = el.innerHTML;
-            el.contentEditable = true;
-            el.style.borderBottom = "1px dashed #4361ee";
-            el.style.padding = "2px";
-          });
-
-        editTechBtn.style.display = "none";
-        saveTechBtn.style.display = "inline-block";
-      });
-
-      saveTechBtn.addEventListener("click", () => {
-        // 保存修改
-        techContent
-          .querySelectorAll(".editable, .editable-list li")
-          .forEach((el) => {
-            el.contentEditable = false;
-            el.style.borderBottom = "none";
-            el.style.padding = "0";
-          });
-        // 这里可以添加保存到本地存储或服务器的逻辑
-        // localStorage.setItem('techConfig', JSON.stringify(getTechConfig()));
-
-        editTechBtn.style.display = "inline-block";
-        saveTechBtn.style.display = "none";
-        addLog("技术说明已更新", "success");
-      });
-
-      // 获取当前技术配置
-      function getTechConfig() {
-        const config = {};
-        techContent
-          .querySelectorAll(".editable, .editable-list li")
-          .forEach((el) => {
-            const key = el.parentElement.dataset.key || el.dataset.key;
-            config[key] = el.innerHTML;
-          });
-        return config;
-      }
-
-      // 恢复默认值
-      function restoreDefaults() {
-        Object.entries(originalContent).forEach(([key, value]) => {
-          const el = techContent.querySelector(`[data-key="${key}"]`);
-          if (el) el.innerHTML = value;
-        });
-      }
+      app.mount("#app");
     </script>
   </body>
 </html>

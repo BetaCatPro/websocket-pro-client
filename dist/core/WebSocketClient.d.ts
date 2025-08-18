@@ -3,14 +3,18 @@ import { WebSocketConfig } from "../types";
 export declare class WebSocketClient extends EventEmitter {
     private readonly url;
     private readonly protocols;
-    private readonly config;
+    private config;
+    private currentConfig;
     private socket;
     private reconnectAttempts;
     private reconnectTimer?;
     private readonly messageQueue;
-    private readonly heartbeat;
+    private heartbeat?;
     private readonly scheduler;
+    private isUpdatingConfig;
+    private configQueue;
     constructor(url: string, protocols: string[], config: Required<WebSocketConfig>);
+    private initHeartbeat;
     private connect;
     private sendRaw;
     private scheduleReconnect;
@@ -18,4 +22,10 @@ export declare class WebSocketClient extends EventEmitter {
     send(data: any, priority?: number): Promise<void>;
     close(code?: number, reason?: string): void;
     reconnect(): void;
+    updateConfig(newConfig: WebSocketConfig): Promise<void>;
+    private applyConfigSafely;
+    private handleConfigChange;
+    private applyConfig;
+    private reInitHeartbeat;
+    private resetReconnectTimer;
 }

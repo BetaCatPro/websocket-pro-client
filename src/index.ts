@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG } from "./config";
 import { WebSocketManager } from "./core/WebSocketManager";
 import type {
   WebSocketConfig,
@@ -6,23 +7,6 @@ import type {
   IWebSocketClient,
   Serializer,
 } from "./types";
-
-// 默认配置常量
-const DEFAULT_CONFIG: Required<WebSocketConfig> = {
-  maxReconnectAttempts: 10,
-  reconnectDelay: 1000,
-  reconnectExponent: 1.5,
-  maxReconnectDelay: 30000,
-  heartbeatInterval: 25000,
-  heartbeatTimeout: 10000,
-  connectionPoolSize: 5,
-  defaultPriority: 1,
-  enableCompression: false,
-  serializer: {
-    serialize: JSON.stringify,
-    deserialize: JSON.parse,
-  },
-};
 
 /**
  * 创建 WebSocket 管理器实例

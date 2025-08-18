@@ -5,7 +5,7 @@ export class TaskScheduler {
   private runningCount = 0;
 
   constructor(
-    private readonly maxConcurrent: number,
+    private maxConcurrent: number,
     private readonly onTaskError?: (err: Error) => void
   ) {}
 
@@ -41,5 +41,12 @@ export class TaskScheduler {
 
   clear(): void {
     this.queue = [];
+  }
+
+  updateThresholds(maxConcurrent?: number): void {
+    if (maxConcurrent !== undefined) {
+      this.maxConcurrent = maxConcurrent;
+    }
+    this.run();
   }
 }

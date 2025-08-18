@@ -8,6 +8,16 @@ export interface Serializer<T = any> {
      */
     deserialize(data: string | ArrayBuffer): T;
 }
+export type HeartbeatConfig = {
+    /** 心跳间隔(ms) (默认: 25000) */
+    interval?: number;
+    /** 心跳超时(ms) (默认: 10000) */
+    timeout?: number;
+    /** 心跳消息 (默认: "PING") */
+    message?: string;
+    /** 自定义超时处理 */
+    onTimeout?: () => void;
+};
 export interface WebSocketConfig {
     /** 最大重连尝试次数 (默认: 10) */
     maxReconnectAttempts?: number;
@@ -17,18 +27,20 @@ export interface WebSocketConfig {
     reconnectExponent?: number;
     /** 最大重连延迟(ms) (默认: 30000) */
     maxReconnectDelay?: number;
-    /** 心跳间隔(ms) (默认: 25000) */
-    heartbeatInterval?: number;
-    /** 心跳超时(ms) (默认: 10000) */
-    heartbeatTimeout?: number;
     /** 连接池大小 (默认: 5) */
     connectionPoolSize?: number;
+    /** 最大并行任务数 (默认: 1) */
+    maxConcurrent?: number;
     /** 默认消息优先级 (默认: 1) */
     defaultPriority?: number;
     /** 是否启用压缩 (默认: false) */
     enableCompression?: boolean;
     /** 自定义序列化器 */
     serializer?: Serializer;
+    /** 是否需要心跳 (默认: true) */
+    isNeedHeartbeat?: boolean;
+    /** 心跳配置 */
+    heartbeat?: HeartbeatConfig;
 }
 export type WebSocketEvent = "open" | "message" | "close" | "error" | "reconnect" | "heartbeat" | "latency";
 export interface IWebSocketClient {

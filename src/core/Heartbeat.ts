@@ -1,36 +1,41 @@
+import { HeartbeatConfig, WebSocketConfig } from "@/types";
 import { EventEmitter } from "./EventEmitter";
 
 export class Heartbeat extends EventEmitter {
-  private intervalMs: number;
-  private timeoutMs: number;
   private lastPongTime: number = 0;
   private intervalId?: NodeJS.Timeout;
   private timeoutId?: NodeJS.Timeout;
 
   constructor(
-    intervalMs: number,
-    timeoutMs: number,
+    private config: HeartbeatConfig = {},
     private readonly sendPing: () => void
   ) {
     super();
-    this.intervalMs = intervalMs;
-    this.timeoutMs = timeoutMs;
   }
 
   start(): void {
+    if (!this.config) {
+      console.log("[Heartbeat] config is empty");
+    }
     this.stop();
     this.lastPongTime = Date.now();
     this.intervalId = setInterval(() => {
       this.sendPing();
       this.timeoutId = setTimeout(() => {
-        this.emit("timeout");
-      }, this.timeoutMs);
-    }, this.intervalMs);
+        this.handleDefaultTimeout(this.config.onTimeout);
+      }, this.config.timeout);
+    }, this.config.interval);
   }
 
   stop(): void {
     clearInterval(this.intervalId);
     clearTimeout(this.timeoutId);
+  }
+
+  handleDefaultTimeout(cb?: () => void): void {
+    this.stop();
+    cb && cb();
+    this.emit("timeout");
   }
 
   recordPong(): void {
@@ -41,5 +46,15 @@ export class Heartbeat extends EventEmitter {
 
   getLastPongTime(): number {
     return this.lastPongTime;
+  }
+
+  updateConfig(config?: WebSocketConfig) {
+    if (!config?.isNeedHeartbeat) {
+      this.stop();
+      return;
+    }
+    this.config = { ...this.config, ...config.heartbeat };
+    this.stop();
+    this.start();
   }
 }
