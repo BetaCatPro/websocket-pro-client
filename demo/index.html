@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -146,7 +146,7 @@
             <h2 class="text-xl font-semibold mb-4 text-purple-300">
               Messaging
             </h2>
-            <div class="mb-4">
+            <div class="mb-4 space-y-2">
               <label class="block text-sm font-medium mb-1">Message</label>
               <div class="flex">
                 <input
@@ -162,8 +162,26 @@
                   :disabled="!isConnected || !message.trim()"
                   class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-r-md transition disabled:opacity-50"
                 >
-                  Send
+                  {{ sendWithAckEnabled ? 'Send (ACK)' : 'Send' }}
                 </button>
+              </div>
+              <div class="flex items-center text-xs text-gray-400 space-x-4">
+                <label class="flex items-center">
+                  <input
+                    type="checkbox"
+                    v-model="sendWithAckEnabled"
+                    class="mr-1"
+                  />
+                  Send with ACK (use <code>sendWithAck</code>)
+                </label>
+                <span v-if="lastAckStatus">
+                  Last ACK status:
+                  <span
+                    :class="lastAckStatus === 'success' ? 'text-green-400' : 'text-red-400'"
+                  >
+                    {{ lastAckStatus }}
+                  </span>
+                </span>
               </div>
             </div>
 
@@ -211,7 +229,7 @@
               :disabled="!isConnected"
               class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-md text-sm transition disabled:opacity-50"
             >
-              Send Test Message
+              Send Test (ACK)
             </button>
             <button
               @click="toggleHeartbeat"
@@ -231,7 +249,7 @@
     </div>
 
     <script type="module">
-      import { createWebSocketManager } from "../dist/websocket-pro.es.js";
+      import { createWebSocketManager } from "../dist/websocket-pro.es.js"
 
       const app = Vue.createApp({
         data() {
@@ -240,11 +258,13 @@
             message: "",
             messages: [],
             isConnected: false,
+            sendWithAckEnabled: false,
+            lastAckStatus: "",
             config: {
               isNeedHeartbeat: true,
               heartbeat: {
-                interval: 10000,
-                timeout: 5000,
+                interval: 5000,
+                timeout: 7000,
                 message: "PING",
               },
               maxReconnectAttempts: 5,
@@ -253,107 +273,142 @@
             client: null,
             reconnectAttempts: 0,
             lastPongTime: null,
-          };
+          }
         },
         methods: {
           connect() {
             if (this.client) {
-              this.client.close();
+              this.client.close()
             }
 
             this.client = createWebSocketManager(this.config).connect(
-              this.wsUrl
-            );
-            this.isConnected = false;
-            this.addMessage("system", `Connecting to ${this.wsUrl}...`);
+              this.wsUrl,
+            )
+            this.isConnected = false
+            this.addMessage("system", `Connecting to ${this.wsUrl}...`)
 
             this.client.on("open", () => {
-              this.isConnected = true;
-              this.addMessage("system", "Connected successfully!");
-            });
+              this.isConnected = true
+              this.addMessage("system", "Connected successfully!")
+            })
 
             this.client.on("message", (data) => {
-              if (data === "PONG") {
-                this.lastPongTime = new Date().toLocaleTimeString();
-                return;
+              // 默认序列化为 JSON，这里统一展示为字符串方便观察 seq / id 变化
+              try {
+                this.addMessage("received", JSON.stringify(data))
+              } catch (e) {
+                this.addMessage("received", String(data))
               }
-              this.addMessage("received", data);
-            });
+            })
 
             this.client.on("close", () => {
-              this.isConnected = false;
-              this.addMessage("system", "Disconnected");
-            });
+              this.isConnected = false
+              this.addMessage("system", "Disconnected")
+            })
 
             this.client.on("error", (err) => {
-              this.addMessage("error", `Error: ${err.message || err}`);
-            });
+              this.addMessage("error", `Error: ${err.message || err}`)
+            })
 
             this.client.on("reconnect", (attempt) => {
-              this.reconnectAttempts = attempt;
-              this.addMessage("system", `Reconnecting (attempt ${attempt})...`);
-            });
+              this.reconnectAttempts = attempt
+              this.addMessage("system", `Reconnecting (attempt ${attempt})...`)
+            })
 
             this.client.on("timeout", () => {
-              this.addMessage("error", "Heartbeat timeout! Reconnecting...");
-            });
+              this.addMessage("error", "Heartbeat timeout! Reconnecting...")
+            })
           },
           disconnect() {
             if (this.client) {
-              this.client.close();
-              this.client = null;
+              this.client.close()
+              this.client = null
             }
           },
           sendMessage() {
             if (this.message.trim() && this.client) {
-              this.client
-                .send(this.message)
+              const payload = { content: this.message }
+              const sendFn = this.sendWithAckEnabled
+                ? this.client.sendWithAck.bind(this.client)
+                : this.client.send.bind(this.client)
+
+              this.lastAckStatus = ""
+
+              sendFn(payload)
                 .then(() => {
-                  this.addMessage("sent", this.message);
-                  this.message = "";
+                  this.addMessage(
+                    "sent",
+                    this.sendWithAckEnabled
+                      ? `${this.message} (ACK success)`
+                      : this.message,
+                  )
+                  if (this.sendWithAckEnabled) {
+                    this.lastAckStatus = "success"
+                  }
+                  this.message = ""
                 })
                 .catch((err) => {
-                  this.addMessage("error", `Failed to send: ${err.message}`);
-                });
+                  this.addMessage("error", `Failed to send: ${err.message}`)
+                  if (this.sendWithAckEnabled) {
+                    this.lastAckStatus = "failed"
+                  }
+                })
             }
           },
           sendTestMessage() {
-            const testMsg = `Test message ${new Date().toLocaleTimeString()}`;
-            this.message = testMsg;
-            this.sendMessage();
+            const testMsg = `Test message ${new Date().toLocaleTimeString()}`
+            const payload = { content: testMsg, test: true }
+
+            if (!this.client) return
+
+            this.lastAckStatus = ""
+
+            this.client
+              .sendWithAck(payload)
+              .then(() => {
+                this.addMessage("sent", `${testMsg} (ACK success)`)
+                this.lastAckStatus = "success"
+              })
+              .catch((err) => {
+                this.addMessage(
+                  "error",
+                  `Failed to send with ACK: ${err.message || err}`,
+                )
+                this.lastAckStatus = "failed"
+              })
           },
           addMessage(type, text) {
-            this.messages.push({ type, text });
+            this.messages.push({ type, text })
             // 自动滚动到底部
             this.$nextTick(() => {
-              const container = document.querySelector(".message-list");
-              if (container) container.scrollTop = container.scrollHeight;
-            });
+              const container = document.querySelector(".message-list")
+              if (container) container.scrollTop = container.scrollHeight
+            })
           },
           updateConfig(newConfig) {
-            const mergedConfig = { ...this.config, ...newConfig };
-            this.config = mergedConfig;
+            const mergedConfig = { ...this.config, ...newConfig }
+            this.config = mergedConfig
             if (this.client) {
-              this.client.updateConfig(mergedConfig);
+              this.client.updateConfig(mergedConfig)
             }
           },
           updateHeartbeatConfig() {
             this.updateConfig({
               heartbeat: this.config.heartbeat,
-            });
+            })
           },
           toggleHeartbeat() {
-            this.config.isNeedHeartbeat = !this.config.isNeedHeartbeat;
-            this.updateConfig({ isNeedHeartbeat: this.config.isNeedHeartbeat });
+            this.config.isNeedHeartbeat = !this.config.isNeedHeartbeat
+            this.updateConfig({ isNeedHeartbeat: this.config.isNeedHeartbeat })
           },
           clearLogs() {
-            this.messages = [];
-            this.reconnectAttempts = 0;
+            this.messages = []
+            this.reconnectAttempts = 0
           },
         },
-      });
+      })
 
-      app.mount("#app");
+      app.mount("#app")
     </script>
   </body>
 </html>

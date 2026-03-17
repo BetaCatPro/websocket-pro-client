@@ -1,6 +1,6 @@
-import { WebSocketClient } from "./WebSocketClient";
-import { EventEmitter } from "./EventEmitter";
-import { WebSocketConfig } from "../types";
+import { WebSocketClient } from './WebSocketClient';
+import { EventEmitter } from './EventEmitter';
+import { WebSocketConfig } from '../types';
 export declare class WebSocketManager extends EventEmitter {
     private readonly config;
     private readonly clients;

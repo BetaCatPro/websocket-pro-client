@@ -1,4 +1,4 @@
-import { Listener } from "../types";
+import { Listener } from '../types';
 export declare class EventEmitter {
     private events;
     on(event: string, listener: Listener): () => void;
