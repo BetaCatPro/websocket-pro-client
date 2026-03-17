@@ -1,12 +1,13 @@
-import { DEFAULT_CONFIG } from "./config";
-import { WebSocketManager } from "./core/WebSocketManager";
+import { DEFAULT_CONFIG } from "./config"
+import { WebSocketManager } from "./core/WebSocketManager"
+import { WebSocketClientError, WebSocketErrorCode } from "./constants/errors"
 import type {
   WebSocketConfig,
   WebSocketEvent,
   IWebSocketManager,
   IWebSocketClient,
   Serializer,
-} from "./types";
+} from "./types"
 
 /**
  * 创建 WebSocket 管理器实例
@@ -22,7 +23,7 @@ import type {
  * ```
  */
 export const createWebSocketManager = (
-  config: Partial<WebSocketConfig> = {}
+  config: Partial<WebSocketConfig> = {},
 ): IWebSocketManager => {
   const mergedConfig: Required<WebSocketConfig> = {
     ...DEFAULT_CONFIG,
@@ -31,10 +32,10 @@ export const createWebSocketManager = (
       ...DEFAULT_CONFIG.serializer,
       ...config.serializer,
     },
-  };
+  }
 
-  return new WebSocketManager(mergedConfig);
-};
+  return new WebSocketManager(mergedConfig)
+}
 
 /**
  * 默认 JSON 序列化器
@@ -42,7 +43,7 @@ export const createWebSocketManager = (
 export const JsonSerializer: Serializer = {
   serialize: JSON.stringify,
   deserialize: JSON.parse,
-};
+}
 
 /**
  * 使用 MessagePack 的序列化器示例（需自行安装依赖）
@@ -62,16 +63,12 @@ export const JsonSerializer: Serializer = {
  */
 export const MsgPackSerializer: Serializer = {
   serialize: (data: any) => {
-    throw new Error(
-      "MsgPack serializer requires @msgpack/msgpack installation"
-    );
+    throw new WebSocketClientError(WebSocketErrorCode.MsgPackNotInstalled)
   },
   deserialize: (data: any) => {
-    throw new Error(
-      "MsgPack serializer requires @msgpack/msgpack installation"
-    );
+    throw new WebSocketClientError(WebSocketErrorCode.MsgPackNotInstalled)
   },
-};
+}
 
 // 导出所有类型和接口
 export type {
@@ -80,7 +77,8 @@ export type {
   IWebSocketManager,
   IWebSocketClient,
   Serializer,
-};
+}
+export { HeartbeatMessage, HeartbeatEvent } from "./constants/heartbeat"
 
 // 导出核心类（供高级用户使用）
-export { EventEmitter, WebSocketManager, WebSocketClient } from "./core";
+export { EventEmitter, WebSocketManager, WebSocketClient } from "./core"

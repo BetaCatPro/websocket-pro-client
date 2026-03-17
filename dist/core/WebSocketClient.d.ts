@@ -1,5 +1,5 @@
-import { EventEmitter } from "./EventEmitter";
-import { WebSocketConfig } from "../types";
+import { EventEmitter } from './EventEmitter';
+import { WebSocketConfig } from '../types';
 export declare class WebSocketClient extends EventEmitter {
     private readonly url;
     private readonly protocols;
@@ -11,6 +11,8 @@ export declare class WebSocketClient extends EventEmitter {
     private readonly messageQueue;
     private heartbeat?;
     private readonly scheduler;
+    private readonly pendingAcks;
+    private lastInboundSeq?;
     private isUpdatingConfig;
     private configQueue;
     constructor(url: string, protocols: string[], config: Required<WebSocketConfig>);
@@ -19,7 +21,10 @@ export declare class WebSocketClient extends EventEmitter {
     private sendRaw;
     private scheduleReconnect;
     private flushMessageQueue;
+    private sendInternal;
+    private handleAckTimeout;
     send(data: any, priority?: number): Promise<void>;
+    sendWithAck(data: any, priority?: number): Promise<void>;
     close(code?: number, reason?: string): void;
     reconnect(): void;
     updateConfig(newConfig: WebSocketConfig): Promise<void>;
