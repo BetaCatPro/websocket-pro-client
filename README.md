@@ -31,7 +31,10 @@ yarn add websocket-pro-client
 ## 快速开始
 
 ```typescript
-import { createWebSocketManager } from 'websocket-pro-client'
+import {
+  createWebSocketManager,
+  HeartbeatTimerMode,
+} from "websocket-pro-client"
 
 // 1. 创建全局 WebSocket 管理器（可配置重连、心跳、ACK 等）
 const manager = createWebSocketManager({
@@ -39,15 +42,15 @@ const manager = createWebSocketManager({
 })
 
 // 2. 建立连接（同一 url + protocols 只会创建一个底层连接）
-const client = manager.connect('wss://api.example.com')
+const client = manager.connect("wss://api.example.com")
 
 // 3. 监听消息
-client.on('message', (data) => {
-  console.log('Received:', data)
+client.on("message", (data) => {
+  console.log("Received:", data)
 })
 
 // 4. 发送消息（不关心 ACK）
-client.send({ type: 'ping' })
+client.send({ type: "ping" })
 ```
 
 ---
@@ -89,10 +92,10 @@ export interface IWebSocketManager {
 示例：
 
 ```ts
-import { WebSocketEvent } from 'websocket-pro-client'
+import { WebSocketEvent } from "websocket-pro-client"
 
 manager.on(WebSocketEvent.Error, ({ url, data }) => {
-  console.error('ws error:', url, data)
+  console.error("ws error:", url, data)
 })
 ```
 
@@ -106,6 +109,8 @@ manager.on(WebSocketEvent.Error, ({ url, data }) => {
 export interface IWebSocketClient {
   send(data: any, priority?: number): Promise<void>
   sendWithAck(data: any, priority?: number): Promise<void>
+  getLastInboundSeq(): string | number | undefined
+  updateLastInboundSeq(seq: string | number): void
   close(code?: number, reason?: string): void
   reconnect(): void
   on(event: WebSocketEvent, listener: (data: any) => void): void
@@ -124,6 +129,14 @@ export interface IWebSocketClient {
     - 要求服务端在处理完成后，发送一条包含 `ackId` 字段的消息（例如 `{ ackId: id }`），表示已确认。
     - 支持超时与自动重试（由 `ack.timeout` 和 `ack.maxRetries` 控制）。
 
+- **`getLastInboundSeq()`**
+  - 获取最后一次入站消息解析到的 `seq`（需要开启 `sequence` 并提供 `extractInboundSeq`）。
+  - 常用于“断线/切前台恢复”后的消息补拉：把返回值作为 `sinceSeq/afterSeq` 参数传给你的 HTTP 拉取接口。
+
+- **`updateLastInboundSeq(seq)`**
+  - 手动更新最后一次入站 `seq`。
+  - 常用于补拉：当你已经把本地数据处理到最新 `seq` 后，同步回 client，避免后续补拉仍使用旧值。
+
 - **`close(code?, reason?)`**
   - 主动关闭当前连接，并清理所有等待中的 ACK。
 
@@ -133,22 +146,22 @@ export interface IWebSocketClient {
 - **事件监听**
 
 ```ts
-import { WebSocketEvent } from 'websocket-pro-client'
+import { WebSocketEvent } from "websocket-pro-client"
 
 client.on(WebSocketEvent.Open, () => {
-  console.log('ws open')
+  console.log("ws open")
 })
 
 client.on(WebSocketEvent.Message, (data) => {
-  console.log('message:', data)
+  console.log("message:", data)
 })
 
 client.on(WebSocketEvent.Close, (event) => {
-  console.log('closed:', event)
+  console.log("closed:", event)
 })
 
 client.on(WebSocketEvent.Error, (err) => {
-  console.error('ws error:', err)
+  console.error("ws error:", err)
 })
 ```
 
@@ -189,14 +202,51 @@ export interface WebSocketConfig {
 
 ```ts
 export type HeartbeatConfig = {
-  interval?: number      // 心跳间隔(ms)，默认 25000
-  timeout?: number       // 心跳超时(ms)，默认 10000
-  message?: string       // 心跳消息内容，默认 "PING"
+  interval?: number // 心跳间隔(ms)，默认 25000
+  timeout?: number // 心跳超时(ms)，默认 45000
+  pingMessage?: any // 用于发送 PING 的消息（默认 "PING"）
+  getPing?: () => any // 自定义生成 PING（优先级高于 pingMessage)
+  pongMessage?: any // 用于识别服务端 PONG 的消息（默认 "PONG"）
+  isPong?: (raw: any, parsed: any) => boolean // 自定义识别 PONG（优先级高于 pongMessage）
+  timerMode?: "auto" | "main" | "worker" // 心跳计时器模式，默认 auto
   onTimeout?: () => void // 心跳超时时的自定义回调
 }
 ```
 
 默认情况下，客户端会周期性发送心跳消息，并在超时时自动触发重连。
+
+#### 浏览器后台与心跳稳定性
+
+当页面被最小化/切到后台时，浏览器可能会对 `setTimeout/setInterval` **降频或合并触发**，导致定时任务不再“准点”。本库的心跳实现会用：
+
+- **递归 `setTimeout` + 漂移修正**：避免 `setInterval` 在后台堆积触发带来的状态错乱
+- **基于真实时间差的超时判断**（`Date.now()`）：即使回调延迟，也不会把“应该超时”的连接误当成健康连接
+
+#### timerMode（可选：Web Worker 计时）
+
+为了提升后台计时稳定性，你可以让心跳的计时器运行在 **Web Worker** 中（部分浏览器/环境可能不支持，库会自动回退到主线程计时器）。
+
+- **`auto`（默认）**：优先使用 Worker，不可用则回退主线程
+- **`main`**：强制主线程
+- **`worker`**：强制 Worker（不可用仍会回退主线程，并输出 warn）
+
+#### PONG 识别（兼容自定义协议）
+
+默认情况下库会把 **`"PONG"`** 识别为心跳响应并调用 `recordPong()`。如果你的服务端返回的不是字符串 `"PONG"`（例如返回 JSON），可以通过下面两种方式配置：
+
+- **`pongMessage`**：简单场景，配置一个值即可（会同时与 raw/parsed 做严格相等判断）
+- **`isPong(raw, parsed)`**：复杂场景，自行判断是否为 PONG（优先级更高）
+
+示例（服务端返回 `{ type: 'pong' }`）：
+
+```ts
+const manager = createWebSocketManager({
+  heartbeat: {
+    getPing: () => ({ type: "ping" }),
+    isPong: (_raw, parsed) => parsed && parsed.type === "pong",
+  },
+})
+```
 
 ### 2. 消息 ACK 配置 AckStrategy
 
@@ -237,7 +287,7 @@ const manager = createWebSocketManager({
     enabled: true,
     wrapOutbound: (id, data) => ({ msgId: id, body: data }),
     extractAckId: (msg) =>
-      msg && msg.type === 'ACK' && msg.msgId != null ? msg.msgId : null,
+      msg && msg.type === "ACK" && msg.msgId != null ? msg.msgId : null,
   },
 })
 ```
@@ -267,10 +317,7 @@ export type SequenceStrategy = {
 ## 使用 ACK 与序列号的完整示例
 
 ```ts
-import {
-  createWebSocketManager,
-  WebSocketEvent,
-} from 'websocket-pro-client'
+import { createWebSocketManager, WebSocketEvent } from "websocket-pro-client"
 
 const manager = createWebSocketManager({
   ack: {
@@ -280,25 +327,55 @@ const manager = createWebSocketManager({
   },
 })
 
-const client = manager.connect('wss://api.example.com')
+const client = manager.connect("wss://api.example.com")
 
 client.on(WebSocketEvent.Open, async () => {
   // 发送一条不需要 ACK 的消息
-  await client.send({ type: 'ping' })
+  await client.send({ type: "ping" })
 
   // 发送一条需要 ACK 的消息
   try {
-    await client.sendWithAck({ type: 'update', payload: { id: 1 } })
-    console.log('update confirmed by server')
+    await client.sendWithAck({ type: "update", payload: { id: 1 } })
+    console.log("update confirmed by server")
   } catch (e) {
-    console.error('update failed (no ACK):', e)
+    console.error("update failed (no ACK):", e)
   }
 })
 
 client.on(WebSocketEvent.Message, (msg) => {
   // msg 是反序列化后的对象，例如:
   // { seq, payload: { ... } } 或根据你自定义的包装形态
-  console.log('inbound message:', msg)
+  console.log("inbound message:", msg)
+})
+```
+
+---
+
+## 与“补拉接口”配合示例（推荐）
+
+浏览器在切到后台、网络波动等场景可能出现 WebSocket 断开/重连。推荐结合服务端的消息存储能力，提供一个补拉接口（例如 `GET /messages?sinceSeq=xxx`）。
+
+```ts
+import { WebSocketEvent, createWebSocketManager } from "websocket-pro-client"
+
+const manager = createWebSocketManager({
+  heartbeat: {
+    timerMode: "auto",
+  },
+})
+
+const client = manager.connect("wss://api.example.com")
+
+async function fetchMissedMessages(sinceSeq?: string | number) {
+  // 伪代码：替换为你的请求库
+  const res = await fetch(`/messages?sinceSeq=${sinceSeq ?? ""}`)
+  return res.json()
+}
+
+client.on(WebSocketEvent.Open, async () => {
+  const sinceSeq = client.getLastInboundSeq()
+  const missed = await fetchMissedMessages(sinceSeq)
+  console.log("missed messages:", missed)
 })
 ```
 

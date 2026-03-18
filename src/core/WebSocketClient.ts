@@ -61,7 +61,13 @@ export class WebSocketClient extends EventEmitter {
   private initHeartbeat() {
     if (!this.currentConfig.isNeedHeartbeat) return
     this.heartbeat = new Heartbeat(this.currentConfig.heartbeat, () => {
-      this.send(this.currentConfig.heartbeat?.message || "PING")
+      const hbCfg = this.currentConfig.heartbeat
+      const ping =
+        typeof hbCfg?.getPing === "function"
+          ? hbCfg.getPing()
+          : (hbCfg?.pingMessage ?? HeartbeatMessage.Ping)
+      // 心跳走独立通道，避免被业务发送/ACK等待阻塞
+      this.sendHeartbeat(ping)
     })
 
     this.heartbeat.on(HeartbeatEvent.Timeout, () => {
@@ -70,6 +76,10 @@ export class WebSocketClient extends EventEmitter {
         this.close(1000, "heartbeat timeout")
       }
       this.scheduleReconnect()
+    })
+
+    this.heartbeat.on(HeartbeatEvent.Pong, (latency) => {
+      this.emit(WebSocketEvent.Heartbeat, latency)
     })
   }
 
@@ -86,11 +96,6 @@ export class WebSocketClient extends EventEmitter {
     }
 
     this.socket.onmessage = (event) => {
-      if (event.data === HeartbeatMessage.Pong) {
-        this.heartbeat && this.heartbeat.recordPong()
-        return
-      }
-
       const raw = event.data
       let parsed: any = raw
 
@@ -100,6 +105,19 @@ export class WebSocketClient extends EventEmitter {
       } catch {
         // 反序列化失败时，不影响原始事件分发
         parsed = raw
+      }
+
+      // 0. 识别心跳 PONG（允许外部自定义）
+      const hbCfg = this.currentConfig.heartbeat
+      const isPong =
+        typeof hbCfg?.isPong === "function"
+          ? hbCfg.isPong(raw, parsed)
+          : hbCfg?.pongMessage !== undefined &&
+            (raw === hbCfg.pongMessage || parsed === hbCfg.pongMessage)
+
+      if (isPong) {
+        this.heartbeat && this.heartbeat.recordPong()
+        return
       }
 
       // 1. 处理 ACK
@@ -148,6 +166,22 @@ export class WebSocketClient extends EventEmitter {
     }
   }
 
+  /**
+   * 心跳专用发送通道：
+   * - 绕过 TaskScheduler（不占用并发槽位）
+   * - 不参与 ACK / 序列号包装（保持尽可能轻量）
+   */
+  private sendHeartbeat(ping: any): void {
+    if (this.socket?.readyState !== WebSocket.OPEN) return
+    try {
+      const payload = this.currentConfig.serializer.serialize(ping)
+      this.sendRaw(payload)
+    } catch (err) {
+      // 心跳发送失败只作为 error 事件抛出，不影响业务队列
+      this.emit(WebSocketEvent.Error, err as Error)
+    }
+  }
+
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.currentConfig.maxReconnectAttempts) {
       this.emit(WebSocketEvent.OverMaxReconnectAttempts)
@@ -185,64 +219,82 @@ export class WebSocketClient extends EventEmitter {
     needAck: boolean,
   ): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      return this.scheduler.add(() => {
-        return new Promise((resolve, reject) => {
-          try {
-            let outbound = data
+      const ackCfg = this.currentConfig.ack
 
-            // 1. 序列号包装
-            const seqCfg = this.currentConfig.sequence
-            if (seqCfg?.enabled && typeof seqCfg.wrapOutbound === "function") {
-              const seq = seqCfg.generateSeq?.()
-              if (seq !== undefined) {
-                outbound = seqCfg.wrapOutbound(seq, outbound)
-              }
-            }
+      // ACK 等待 Promise 与“发送任务”解耦，避免占用 scheduler 并发槽位
+      let ackId: string | number | null = null
+      let resolveAck: (() => void) | undefined
+      let rejectAck: ((err: Error) => void) | undefined
 
-            // 2. ACK 包装
-            const ackCfg = this.currentConfig.ack
-            let ackId: string | number | null = null
-            if (needAck && ackCfg?.enabled) {
-              const id = ackCfg.generateId?.()
-              if (
-                id !== undefined &&
-                id !== null &&
-                typeof ackCfg.wrapOutbound === "function"
-              ) {
-                ackId = id
-                outbound = ackCfg.wrapOutbound(id, outbound)
-              }
-            }
+      const ackPromise = needAck
+        ? new Promise<void>((resolve, reject) => {
+            resolveAck = resolve
+            rejectAck = reject
+          })
+        : undefined
 
-            const payload = this.currentConfig.serializer.serialize(outbound)
-            this.sendRaw(payload)
+      const sendPromise = this.scheduler.add(async () => {
+        let outbound = data
 
-            // 不需要 ACK 或未成功生成 id，直接结束
-            if (!needAck || !ackCfg?.enabled || ackId === null) {
-              resolve()
-              return
-            }
-
-            const timeout = ackCfg.timeout ?? 5000
-            const maxRetries = ackCfg.maxRetries ?? 0
-
-            const entry = {
-              resolve,
-              reject: (err: Error) => reject(err),
-              retries: 0,
-              rawData: data,
-              priority,
-              timer: setTimeout(() => {
-                this.handleAckTimeout(ackId as string | number)
-              }, timeout),
-            }
-
-            this.pendingAcks.set(ackId as string | number, entry)
-          } catch (err) {
-            reject(err as Error)
+        // 1. 序列号包装
+        const seqCfg = this.currentConfig.sequence
+        if (seqCfg?.enabled && typeof seqCfg.wrapOutbound === "function") {
+          const seq = seqCfg.generateSeq?.()
+          if (seq !== undefined) {
+            outbound = seqCfg.wrapOutbound(seq, outbound)
           }
+        }
+
+        // 2. ACK 包装（仅包装；等待由 ackPromise 处理）
+        if (needAck && ackCfg?.enabled) {
+          const id = ackCfg.generateId?.()
+          if (
+            id !== undefined &&
+            id !== null &&
+            typeof ackCfg.wrapOutbound === "function"
+          ) {
+            ackId = id
+            outbound = ackCfg.wrapOutbound(id, outbound)
+          }
+        }
+
+        const payload = this.currentConfig.serializer.serialize(outbound)
+        this.sendRaw(payload)
+
+        // 3. 注册 pending ack（发送完成后立即返回，释放并发槽位）
+        if (!needAck || !ackCfg?.enabled || ackId === null) return
+
+        const timeout = ackCfg.timeout ?? 5000
+        this.pendingAcks.set(ackId, {
+          resolve: () => resolveAck?.(),
+          reject: (err: Error) => rejectAck?.(err),
+          retries: 0,
+          rawData: data,
+          priority,
+          timer: setTimeout(() => {
+            this.handleAckTimeout(ackId as string | number)
+          }, timeout),
         })
       }, priority)
+
+      if (!needAck) return sendPromise
+
+      return sendPromise.catch((err) => {
+        // 发送阶段失败：同步失败 ACK 等待，并避免泄漏 pending 记录
+        if (ackId !== null) {
+          const entry = this.pendingAcks.get(ackId)
+          if (entry) {
+            clearTimeout(entry.timer)
+            this.pendingAcks.delete(ackId)
+          }
+        }
+        rejectAck?.(err as Error)
+        throw err
+      }).then(() => {
+        // 未成功生成 ack id：等同普通发送
+        if (!ackCfg?.enabled || ackId === null || !ackPromise) return
+        return ackPromise
+      })
     }
 
     // 连接未就绪：入队，等待连接建立后统一发送
@@ -295,6 +347,14 @@ export class WebSocketClient extends EventEmitter {
     priority: number = this.currentConfig.defaultPriority,
   ): Promise<void> {
     return this.sendInternal(data, priority, true)
+  }
+
+  getLastInboundSeq(): string | number | undefined {
+    return this.lastInboundSeq
+  }
+
+  updateLastInboundSeq(seq: string | number): void {
+    this.lastInboundSeq = seq
   }
 
   close(code?: number, reason?: string): void {

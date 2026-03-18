@@ -14,6 +14,7 @@ export const CORE_WEB_SOCKET_EVENTS: WebSocketEvent[] = [
   WebSocketEvent.Message,
   WebSocketEvent.Close,
   WebSocketEvent.Error,
+  WebSocketEvent.Heartbeat,
 ]
 
 export const ALL_WEB_SOCKET_EVENTS: WebSocketEvent[] = [

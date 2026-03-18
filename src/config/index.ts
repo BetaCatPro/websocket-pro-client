@@ -1,4 +1,5 @@
 import { WebSocketConfig } from "../types"
+import { HeartbeatMessage, HeartbeatTimerMode } from "../constants/heartbeat"
 
 // 默认配置常量
 export const DEFAULT_CONFIG: Required<WebSocketConfig> = {
@@ -32,12 +33,7 @@ export const DEFAULT_CONFIG: Required<WebSocketConfig> = {
       id,
       payload: data,
     }),
-    extractAckId: (message: any) => {
-      if (message && typeof message === "object" && "ackId" in message) {
-        return (message as any).ackId
-      }
-      return null
-    },
+    extractAckId: (msg) => (msg && typeof msg === "object" ? msg.id : null),
   },
   sequence: {
     enabled: true,
@@ -63,7 +59,9 @@ export const DEFAULT_CONFIG: Required<WebSocketConfig> = {
   isNeedHeartbeat: true,
   heartbeat: {
     interval: 25000,
-    timeout: 10000,
-    message: "PING",
+    timeout: 45000,
+    pingMessage: HeartbeatMessage.Ping,
+    pongMessage: HeartbeatMessage.Pong,
+    timerMode: HeartbeatTimerMode.Auto,
   },
 }

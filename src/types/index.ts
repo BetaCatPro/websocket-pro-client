@@ -10,13 +10,43 @@ export interface Serializer<T = any> {
   deserialize(data: string | ArrayBuffer): T
 }
 
+import type { HeartbeatTimerMode } from "../constants/heartbeat"
+
 export type HeartbeatConfig = {
   /** 心跳间隔(ms) (默认: 25000) */
   interval?: number
-  /** 心跳超时(ms) (默认: 10000) */
+  /** 心跳超时(ms) (默认: 45000) */
   timeout?: number
   /** 心跳消息 (默认: "PING") */
   message?: string
+  /**
+   * 用于发送 PING 的消息（默认: "PING"）
+   * - 建议新项目使用 pingMessage/getPing，message 仍保留用于兼容旧版本
+   */
+  pingMessage?: any
+  /**
+   * 自定义生成 PING 的函数（优先级高于 pingMessage/message）
+   * - 适用于 ping 需要携带动态字段（时间戳、token、seq 等）的协议
+   */
+  getPing?: () => any
+  /**
+   * 用于识别服务端的 PONG（默认: "PONG"）
+   * - 简单场景直接配置一个值即可（会同时与 raw/parsed 做严格相等判断）
+   */
+  pongMessage?: any
+  /**
+   * 自定义识别 PONG 的函数（优先级高于 pongMessage）
+   * @param raw event.data 原始值
+   * @param parsed 经过 serializer.deserialize 后的值（反序列化失败时等于 raw）
+   */
+  isPong?: (raw: any, parsed: any) => boolean
+  /**
+   * 心跳计时器模式（默认: "auto"）
+   * - auto: 优先使用 Web Worker（若不可用则回退主线程计时器）
+   * - main: 强制使用主线程计时器
+   * - worker: 强制使用 Web Worker 计时器（若不可用则回退主线程计时器）
+   */
+  timerMode?: HeartbeatTimerMode | "auto" | "main" | "worker"
   /** 自定义超时处理 */
   onTimeout?: () => void
 }
@@ -106,6 +136,16 @@ export interface IWebSocketClient {
    * - 返回的 Promise 会在收到 ACK、超时或重试失败后结束
    */
   sendWithAck(data: any, priority?: number): Promise<void>
+  /**
+   * 获取最后一次入站消息解析到的 seq（需要开启 sequence 并提供 extractInboundSeq）
+   * - 常用于“断线/切前台后补拉”：把返回值作为 sinceSeq/afterSeq 之类的参数传给 HTTP 接口
+   */
+  getLastInboundSeq(): string | number | undefined
+  /**
+   * 手动更新最后一次入站 seq
+   * - 常用于补拉接口：当你已经把数据同步到最新 seq 后，调用此方法同步到 client
+   */
+  updateLastInboundSeq(seq: string | number): void
   close(code?: number, reason?: string): void
   reconnect(): void
   on(event: WebSocketEvent, listener: (data: any) => void): void

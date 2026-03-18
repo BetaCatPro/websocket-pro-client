@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WebSocket Pro Client (Vue 3)</title>
+    <title>WebSocket Pro Client</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Vue 3 -->
@@ -11,238 +11,239 @@
     <style>
       .message-list {
         scrollbar-width: thin;
-        scrollbar-color: #4b5563 #1f2937;
-      }
-      .connection-status.connected {
-        animation: pulse 2s infinite;
-      }
-      @keyframes pulse {
-        0% {
-          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
-        }
-        70% {
-          box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
-        }
-        100% {
-          box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
-        }
+        scrollbar-color: #cbd5e1 #f8fafc;
       }
     </style>
   </head>
-  <body class="bg-gray-900 text-gray-100 min-h-screen">
-    <div id="app" class="container mx-auto px-4 py-8">
-      <div class="max-w-4xl mx-auto">
-        <h1 class="text-3xl font-bold text-center mb-6 text-green-400">
-          WebSocket Pro Client (Vue 3)
-        </h1>
+  <body class="bg-slate-50 text-slate-900 min-h-screen">
+    <div id="app" class="mx-auto max-w-6xl px-4 py-8">
+      <div class="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight">
+            WebSocket Pro Client
+          </h1>
+          <div class="text-sm text-slate-600 mt-1">
+            Minimal demo: network drop/restart, heartbeat toggle & timer mode,
+            send message, send with ACK.
+          </div>
+        </div>
+        <button
+          @click="clearLogs"
+          class="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          Clear logs
+        </button>
+      </div>
 
-        <!-- 连接控制 -->
-        <div class="bg-gray-800 rounded-lg p-6 shadow-lg mb-6">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label class="block text-sm font-medium mb-1"
-                >WebSocket URL</label
-              >
-              <input
-                v-model="wsUrl"
-                type="text"
-                class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-2 text-sm"
-              />
-            </div>
-            <div class="flex items-end space-x-2">
-              <button
-                @click="connect"
-                :disabled="isConnected"
-                class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md transition disabled:opacity-50"
-              >
-                Connect
-              </button>
-              <button
-                @click="disconnect"
-                :disabled="!isConnected"
-                class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md transition disabled:opacity-50"
-              >
-                Disconnect
-              </button>
-            </div>
-            <div
-              :class="['p-4 rounded-md', isConnected ? 'bg-green-900/50 connection-status connected' : 'bg-gray-700']"
+      <!-- Connection / Network -->
+      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div
+          class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"
+        >
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+              WebSocket URL
+            </label>
+            <input
+              v-model="wsUrl"
+              type="text"
+              class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              placeholder="e.g. wss://echo.websocket.org"
+            />
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              @click="connect"
+              :disabled="isConnected"
+              class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
             >
-              <div class="flex items-center">
-                <div
-                  :class="['w-3 h-3 rounded-full mr-2', isConnected ? 'bg-green-400' : 'bg-gray-400']"
-                ></div>
-                <span>{{ isConnected ? 'Connected' : 'Disconnected' }}</span>
-              </div>
-              <div v-if="lastPongTime" class="text-xs mt-2 text-gray-400">
-                Last PONG: {{ lastPongTime }}
-              </div>
+              Connect
+            </button>
+            <button
+              @click="disconnect"
+              :disabled="!client"
+              class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            >
+              Disconnect
+            </button>
+            <button
+              @click="simulateNetworkDrop"
+              :disabled="!client"
+              class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+            >
+              Simulate drop
+            </button>
+            <button
+              @click="simulateNetworkRestart"
+              :disabled="!client"
+              class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+            >
+              Simulate restart
+            </button>
+          </div>
+
+          <div
+            class="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+          >
+            <div
+              :class="['h-2.5 w-2.5 rounded-full', isConnected ? 'bg-emerald-500' : 'bg-slate-400']"
+            ></div>
+            <div class="text-sm font-medium">
+              {{ isConnected ? 'Connected' : (client ? 'Disconnected' : 'Idle')
+              }}
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- 配置面板 -->
-          <div class="bg-gray-800 rounded-lg p-6 shadow-lg">
-            <h2 class="text-xl font-semibold mb-4 text-blue-300">
-              Configuration
-            </h2>
-            <div class="space-y-4">
-              <div>
-                <label class="flex items-center">
-                  <input
-                    type="checkbox"
-                    v-model="config.isNeedHeartbeat"
-                    @change="updateConfig({ isNeedHeartbeat: config.isNeedHeartbeat })"
-                    class="mr-2"
-                  />
-                  Enable Heartbeat
-                </label>
+      <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Heartbeat -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3 mb-4">
+            <h2 class="text-base font-semibold">Heartbeat</h2>
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                v-model="config.isNeedHeartbeat"
+                @change="updateConfig({ isNeedHeartbeat: config.isNeedHeartbeat })"
+                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+              />
+              Enabled
+            </label>
+          </div>
+
+          <div
+            class="space-y-3"
+            :class="config.isNeedHeartbeat ? '' : 'opacity-50'"
+          >
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">
+                Timer strategy
+              </label>
+              <select
+                v-model="config.heartbeat.timerMode"
+                @change="updateHeartbeatConfig"
+                :disabled="!config.isNeedHeartbeat"
+                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+              >
+                <option value="auto">auto (prefer worker)</option>
+                <option value="main">main thread</option>
+                <option value="worker">worker (fallback if unavailable)</option>
+              </select>
+              <div class="text-xs text-slate-500 mt-1">
+                Tip: open DevTools console to see fallback warnings.
               </div>
+            </div>
 
-              <template v-if="config.isNeedHeartbeat">
-                <div class="space-y-3 pl-6">
-                  <div>
-                    <label class="block text-sm font-medium mb-1"
-                      >Interval (ms)</label
-                    >
-                    <input
-                      type="number"
-                      v-model.number="config.heartbeat.interval"
-                      @change="updateHeartbeatConfig"
-                      class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium mb-1"
-                      >Timeout (ms)</label
-                    >
-                    <input
-                      type="number"
-                      v-model.number="config.heartbeat.timeout"
-                      @change="updateHeartbeatConfig"
-                      class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
-                    />
-                  </div>
-                </div>
-              </template>
-
+            <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block text-sm font-medium mb-1"
-                  >Max Reconnect Attempts</label
-                >
+                <label class="block text-sm font-medium text-slate-700 mb-1">
+                  Interval (ms)
+                </label>
                 <input
                   type="number"
-                  v-model.number="config.maxReconnectAttempts"
-                  @change="updateConfig({ maxReconnectAttempts: config.maxReconnectAttempts })"
-                  class="w-full bg-gray-700 border border-gray-600 rounded-md px-3 py-1 text-sm"
+                  v-model.number="config.heartbeat.interval"
+                  @change="updateHeartbeatConfig"
+                  :disabled="!config.isNeedHeartbeat"
+                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
                 />
               </div>
-            </div>
-          </div>
-
-          <!-- 消息面板 -->
-          <div class="bg-gray-800 rounded-lg p-6 shadow-lg lg:col-span-2">
-            <h2 class="text-xl font-semibold mb-4 text-purple-300">
-              Messaging
-            </h2>
-            <div class="mb-4 space-y-2">
-              <label class="block text-sm font-medium mb-1">Message</label>
-              <div class="flex">
-                <input
-                  type="text"
-                  v-model="message"
-                  @keyup.enter="sendMessage"
-                  :disabled="!isConnected"
-                  class="flex-1 bg-gray-700 border border-gray-600 rounded-l-md px-3 py-2 text-sm disabled:opacity-50"
-                  placeholder="Type your message..."
-                />
-                <button
-                  @click="sendMessage"
-                  :disabled="!isConnected || !message.trim()"
-                  class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-r-md transition disabled:opacity-50"
-                >
-                  {{ sendWithAckEnabled ? 'Send (ACK)' : 'Send' }}
-                </button>
-              </div>
-              <div class="flex items-center text-xs text-gray-400 space-x-4">
-                <label class="flex items-center">
-                  <input
-                    type="checkbox"
-                    v-model="sendWithAckEnabled"
-                    class="mr-1"
-                  />
-                  Send with ACK (use <code>sendWithAck</code>)
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">
+                  Timeout (ms)
                 </label>
-                <span v-if="lastAckStatus">
-                  Last ACK status:
-                  <span
-                    :class="lastAckStatus === 'success' ? 'text-green-400' : 'text-red-400'"
-                  >
-                    {{ lastAckStatus }}
-                  </span>
-                </span>
-              </div>
-            </div>
-
-            <div class="h-64 bg-gray-900 rounded-md overflow-hidden">
-              <div class="message-list h-full overflow-y-auto p-3 space-y-2">
-                <div
-                  v-for="(msg, index) in messages"
-                  :key="index"
-                  :class="{
-                  'bg-blue-900/50 text-blue-100': msg.type === 'sent',
-                  'bg-green-900/50 text-green-100': msg.type === 'received',
-                  'bg-red-900/50 text-red-100': msg.type === 'error',
-                  'bg-gray-700/50 text-gray-300': msg.type === 'system'
-                }"
-                  class="p-2 rounded-md text-sm break-words"
-                >
-                  {{ msg.text }}
-                </div>
-                <div
-                  v-if="messages.length === 0"
-                  class="text-gray-500 text-center mt-20"
-                >
-                  No messages yet
-                </div>
+                <input
+                  type="number"
+                  v-model.number="config.heartbeat.timeout"
+                  @change="updateHeartbeatConfig"
+                  :disabled="!config.isNeedHeartbeat"
+                  class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+                />
               </div>
             </div>
           </div>
         </div>
 
-        <!-- 测试按钮 -->
-        <div class="mt-6 bg-gray-800 rounded-lg p-6 shadow-lg">
-          <h2 class="text-xl font-semibold mb-4 text-yellow-300">
-            Quick Tests
-          </h2>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <button
-              @click="client?.reconnect()"
-              :disabled="!isConnected"
-              class="bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-3 rounded-md text-sm transition disabled:opacity-50"
-            >
-              Force Reconnect
-            </button>
-            <button
-              @click="sendTestMessage"
-              :disabled="!isConnected"
-              class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded-md text-sm transition disabled:opacity-50"
-            >
-              Send Test (ACK)
-            </button>
-            <button
-              @click="toggleHeartbeat"
-              class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-3 rounded-md text-sm transition"
-            >
-              Toggle Heartbeat
-            </button>
-            <button
-              @click="clearLogs"
-              class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-3 rounded-md text-sm transition"
-            >
-              Clear Logs
-            </button>
+        <!-- Messaging -->
+        <div
+          class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2"
+        >
+          <div class="flex items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold">Messaging</h2>
+              <div class="text-xs text-slate-500 mt-1">
+                Send a normal message or use <code>sendWithAck</code> to verify
+                ACK path.
+              </div>
+            </div>
+            <div v-if="lastAckStatus" class="text-xs">
+              Last ACK:
+              <span
+                class="font-medium"
+                :class="lastAckStatus === 'success' ? 'text-emerald-700' : 'text-rose-700'"
+              >
+                {{ lastAckStatus }}
+              </span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
+            <div class="sm:col-span-3">
+              <label class="block text-sm font-medium text-slate-700 mb-1">
+                Message payload
+              </label>
+              <input
+                type="text"
+                v-model="message"
+                @keyup.enter="sendNormalMessage"
+                :disabled="!isConnected"
+                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-50"
+                placeholder="Type and press Enter..."
+              />
+            </div>
+            <div class="sm:col-span-2 flex gap-2 sm:items-end">
+              <button
+                @click="sendNormalMessage"
+                :disabled="!isConnected || !message.trim()"
+                class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+              >
+                Send
+              </button>
+              <button
+                @click="sendAckMessage"
+                :disabled="!isConnected || !message.trim()"
+                class="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+              >
+                Send (ACK)
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="mt-4 h-72 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden"
+          >
+            <div class="message-list h-full overflow-y-auto p-3 space-y-2">
+              <div
+                v-for="(msg, index) in messages"
+                :key="index"
+                :class="{
+                  'bg-indigo-50 text-indigo-900 border-indigo-200': msg.type === 'sent',
+                  'bg-emerald-50 text-emerald-900 border-emerald-200': msg.type === 'received',
+                  'bg-rose-50 text-rose-900 border-rose-200': msg.type === 'error',
+                  'bg-white text-slate-700 border-slate-200': msg.type === 'system'
+                }"
+                class="rounded-lg border px-3 py-2 text-sm break-words"
+              >
+                {{ msg.text }}
+              </div>
+              <div
+                v-if="messages.length === 0"
+                class="text-slate-400 text-center mt-24 text-sm"
+              >
+                No logs yet
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -258,21 +259,20 @@
             message: "",
             messages: [],
             isConnected: false,
-            sendWithAckEnabled: false,
             lastAckStatus: "",
             config: {
               isNeedHeartbeat: true,
               heartbeat: {
                 interval: 5000,
                 timeout: 7000,
-                message: "PING",
+                pingMessage: "PING",
+                pongMessage: "PONG",
+                isPong: (raw, parsed) => raw === "PING" || parsed === "PING",
+                timerMode: "worker",
               },
-              maxReconnectAttempts: 5,
               reconnectDelay: 1000,
             },
             client: null,
-            reconnectAttempts: 0,
-            lastPongTime: null,
           }
         },
         methods: {
@@ -311,12 +311,15 @@
             })
 
             this.client.on("reconnect", (attempt) => {
-              this.reconnectAttempts = attempt
               this.addMessage("system", `Reconnecting (attempt ${attempt})...`)
             })
 
             this.client.on("timeout", () => {
               this.addMessage("error", "Heartbeat timeout! Reconnecting...")
+            })
+
+            this.client.on("heartbeat", (latency) => {
+              this.addMessage("system", `Heartbeat: ${latency}ms`)
             })
           },
           disconnect() {
@@ -325,49 +328,34 @@
               this.client = null
             }
           },
-          sendMessage() {
-            if (this.message.trim() && this.client) {
-              const payload = { content: this.message }
-              const sendFn = this.sendWithAckEnabled
-                ? this.client.sendWithAck.bind(this.client)
-                : this.client.send.bind(this.client)
-
-              this.lastAckStatus = ""
-
-              sendFn(payload)
-                .then(() => {
-                  this.addMessage(
-                    "sent",
-                    this.sendWithAckEnabled
-                      ? `${this.message} (ACK success)`
-                      : this.message,
-                  )
-                  if (this.sendWithAckEnabled) {
-                    this.lastAckStatus = "success"
-                  }
-                  this.message = ""
-                })
-                .catch((err) => {
-                  this.addMessage("error", `Failed to send: ${err.message}`)
-                  if (this.sendWithAckEnabled) {
-                    this.lastAckStatus = "failed"
-                  }
-                })
-            }
+          sendNormalMessage() {
+            if (!this.client || !this.message.trim()) return
+            const content = this.message.trim()
+            const payload = { content }
+            this.client
+              .send(payload)
+              .then(() => {
+                this.addMessage("sent", content)
+                this.message = ""
+              })
+              .catch((err) => {
+                this.addMessage(
+                  "error",
+                  `Failed to send: ${err.message || err}`,
+                )
+              })
           },
-          sendTestMessage() {
-            const testMsg = `Test message ${new Date().toLocaleTimeString()}`
-            const payload = { content: testMsg, test: true }
-
-            if (!this.client) return
-
+          sendAckMessage() {
+            if (!this.client || !this.message.trim()) return
+            const content = this.message.trim()
+            const payload = { content }
             this.lastAckStatus = ""
-
             this.client
               .sendWithAck(payload)
               .then(() => {
-                this.addMessage("sent", `${testMsg} (ACK success)`)
+                this.addMessage("sent", `${content} (ACK success)`)
                 this.lastAckStatus = "success"
+                this.message = ""
               })
               .catch((err) => {
                 this.addMessage(
@@ -397,13 +385,29 @@
               heartbeat: this.config.heartbeat,
             })
           },
-          toggleHeartbeat() {
-            this.config.isNeedHeartbeat = !this.config.isNeedHeartbeat
-            this.updateConfig({ isNeedHeartbeat: this.config.isNeedHeartbeat })
-          },
           clearLogs() {
             this.messages = []
-            this.reconnectAttempts = 0
+          },
+          simulateNetworkDrop() {
+            if (!this.client) return
+            this.addMessage(
+              "system",
+              "Simulating network drop (close socket)...",
+            )
+            // 1006 是保留码，不能主动 close，使用自定义 4xxx code 模拟异常断开
+            this.client.close(4000, "simulated network drop")
+          },
+          simulateNetworkRestart() {
+            if (!this.client) return
+            this.addMessage(
+              "system",
+              "Simulating restart (close -> reconnect)...",
+            )
+            this.client.close(4001, "simulated restart")
+            setTimeout(() => {
+              if (!this.client) return
+              this.client.reconnect()
+            }, 800)
           },
         },
       })

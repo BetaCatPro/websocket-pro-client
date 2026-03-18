@@ -5,5 +5,10 @@ export declare enum HeartbeatMessage {
 /** Heartbeat 内部发出的事件名 */
 export declare enum HeartbeatEvent {
     Timeout = "timeout",
-    Pong = "PONG"
+    Pong = "pong"
+}
+export declare enum HeartbeatTimerMode {
+    Auto = "auto",
+    Main = "main",
+    Worker = "worker"
 }

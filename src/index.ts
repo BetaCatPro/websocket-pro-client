@@ -79,6 +79,7 @@ export type {
   Serializer,
 }
 export { HeartbeatMessage, HeartbeatEvent } from "./constants/heartbeat"
+export { HeartbeatTimerMode } from "./constants/heartbeat"
 
 // 导出核心类（供高级用户使用）
 export { EventEmitter, WebSocketManager, WebSocketClient } from "./core"
