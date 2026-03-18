@@ -1,4 +1,5 @@
-const _ = {
+var y = /* @__PURE__ */ ((i) => (i.Ping = "PING", i.Pong = "PONG", i))(y || {}), b = /* @__PURE__ */ ((i) => (i.Timeout = "timeout", i.Pong = "pong", i))(b || {}), m = /* @__PURE__ */ ((i) => (i.Auto = "auto", i.Main = "main", i.Worker = "worker", i))(m || {});
+const k = {
   maxReconnectAttempts: 10,
   reconnectDelay: 1e3,
   reconnectExponent: 1.5,
@@ -24,7 +25,7 @@ const _ = {
       id: i,
       payload: e
     }),
-    extractAckId: (i) => i && typeof i == "object" && "ackId" in i ? i.ackId : null
+    extractAckId: (i) => i && typeof i == "object" ? i.id : null
   },
   sequence: {
     enabled: !0,
@@ -42,16 +43,21 @@ const _ = {
   isNeedHeartbeat: !0,
   heartbeat: {
     interval: 25e3,
-    timeout: 1e4,
-    message: "PING"
+    timeout: 45e3,
+    pingMessage: y.Ping,
+    pongMessage: y.Pong,
+    timerMode: m.Auto
   }
 };
-var k = /* @__PURE__ */ ((i) => (i.Ping = "PING", i.Pong = "PONG", i))(k || {}), p = /* @__PURE__ */ ((i) => (i.Timeout = "timeout", i.Pong = "PONG", i))(p || {});
-class P {
+class S {
   constructor(e = "[WebSocketPro]") {
     this.prefix = e;
   }
   debug(...e) {
+    var s;
+    // Vite / modern bundlers may inject {"BASE_URL":"/","MODE":"production","DEV":false,"PROD":true,"SSR":false}
+    (typeof import.meta < "u" && ((s = import.meta) == null ? void 0 : s.env) && !1 || // Node / other bundlers
+    typeof process < "u" && (process == null ? void 0 : process.env) && process.env.NODE_ENV !== "production") && console.debug(this.prefix, ...e);
   }
   info(...e) {
     console.info(this.prefix, ...e);
@@ -63,9 +69,9 @@ class P {
     console.error(this.prefix, ...e);
   }
 }
-let R = new P();
-const w = () => R;
-class A {
+let N = new S();
+const T = () => N;
+class P {
   constructor() {
     this.events = {};
   }
@@ -73,73 +79,223 @@ class A {
     return this.events[e] || (this.events[e] = []), this.events[e].push(t), () => this.off(e, t);
   }
   off(e, t) {
-    this.events[e] && (this.events[e] = this.events[e].filter((n) => n !== t));
+    this.events[e] && (this.events[e] = this.events[e].filter((s) => s !== t));
   }
   emit(e, ...t) {
-    this.events[e] && this.events[e].forEach((n) => {
+    this.events[e] && this.events[e].forEach((s) => {
       try {
-        n(...t);
-      } catch (s) {
-        w().error(`Event "${e}" listener error:`, s);
+        s(...t);
+      } catch (n) {
+        T().error(`Event "${e}" listener error:`, n);
       }
     });
   }
   once(e, t) {
-    const n = (...s) => {
-      this.off(e, n), t(...s);
+    const s = (...n) => {
+      this.off(e, s), t(...n);
     };
-    this.on(e, n);
+    this.on(e, s);
   }
   removeAllListeners(e) {
     e ? delete this.events[e] : this.events = {};
   }
 }
-class E extends A {
+class w {
+  setTimeout(e, t) {
+    return globalThis.setTimeout(e, t);
+  }
+  clearTimeout(e) {
+    e !== void 0 && globalThis.clearTimeout(e);
+  }
+}
+class O {
+  constructor() {
+    this.callbackMap = /* @__PURE__ */ new Map(), this.nextId = 1, this.isAvailable = !1, this.worker = this.createWorker(), this.isAvailable = !!this.worker;
+  }
+  get available() {
+    return this.isAvailable;
+  }
+  setTimeout(e, t) {
+    if (!this.worker || !this.isAvailable)
+      return globalThis.setTimeout(e, t);
+    const s = this.nextId++;
+    this.callbackMap.set(s, e);
+    try {
+      this.worker.postMessage({ type: "setTimeout", id: s, delay: t });
+    } catch {
+      return this.markUnavailable(), globalThis.setTimeout(e, t);
+    }
+    return s;
+  }
+  clearTimeout(e) {
+    if (e !== void 0) {
+      if (!this.worker || !this.isAvailable) {
+        globalThis.clearTimeout(e);
+        return;
+      }
+      this.callbackMap.delete(e);
+      try {
+        this.worker.postMessage({ type: "clearTimeout", id: e });
+      } catch {
+        this.markUnavailable();
+      }
+    }
+  }
+  destroy() {
+    var e;
+    this.callbackMap.clear();
+    try {
+      (e = this.worker) == null || e.terminate();
+    } catch {
+    }
+    this.worker = void 0, this.isAvailable = !1;
+  }
+  createWorker() {
+    if (typeof Worker > "u" || typeof URL > "u" || typeof Blob > "u")
+      return;
+    const e = `
+      const timers = new Map()
+      self.onmessage = (e) => {
+        const msg = e.data || {}
+        const { type, id, delay } = msg
+        if (type === 'setTimeout') {
+          const t = setTimeout(() => {
+            self.postMessage({ type: 'fire', id })
+            timers.delete(id)
+          }, delay)
+          timers.set(id, t)
+          return
+        }
+        if (type === 'clearTimeout') {
+          const t = timers.get(id)
+          if (t) clearTimeout(t)
+          timers.delete(id)
+          return
+        }
+      }
+    `;
+    try {
+      const t = new Blob([e], { type: "application/javascript" }), s = URL.createObjectURL(t), n = new Worker(s);
+      return URL.revokeObjectURL(s), n.onmessage = (r) => {
+        const o = r.data || {};
+        if (o.type !== "fire")
+          return;
+        const a = this.callbackMap.get(o.id);
+        a && (this.callbackMap.delete(o.id), a());
+      }, n.onerror = () => {
+        this.markUnavailable();
+      }, n;
+    } catch {
+      return;
+    }
+  }
+  markUnavailable() {
+    this.isAvailable = !1;
+    const e = this.worker;
+    this.worker = void 0;
+    try {
+      e == null || e.terminate();
+    } catch {
+      T().error("Heartbeat worker error");
+    }
+  }
+}
+function R(i) {
+  const e = i.timerMode ?? m.Auto;
+  if (e === m.Main)
+    return new w();
+  const t = new O();
+  return e === m.Worker && !t.available ? (T().warn("Heartbeat worker timer unavailable, fallback to main"), t.destroy(), new w()) : e === m.Auto && !t.available ? (t.destroy(), new w()) : t;
+}
+class I extends P {
   constructor(e = {}, t) {
-    super(), this.config = e, this.sendPing = t, this.lastPongTime = 0;
+    super(), this.config = e, this.sendPing = t, this.lastPongTime = 0, this.lastPingTime = 0, this.expectedNextPingAt = 0, this.isRunning = !1, this.timer = R(this.config);
   }
   start() {
-    this.config || w().warn("Heartbeat config is empty"), this.stop(), this.lastPongTime = Date.now(), this.intervalId = setInterval(() => {
-      this.sendPing(), this.timeoutId = setTimeout(() => {
-        this.handleDefaultTimeout(this.config.onTimeout);
-      }, this.config.timeout);
-    }, this.config.interval);
+    this.config || T().warn("Heartbeat config is empty"), this.stop(), this.isRunning = !0;
+    const e = Date.now();
+    this.lastPongTime = e, this.lastPingTime = 0, this.expectedNextPingAt = e + (this.config.interval ?? 0), this.schedulePongTimeoutCheck(), this.scheduleNextPing();
   }
   stop() {
-    clearInterval(this.intervalId), clearTimeout(this.timeoutId);
+    this.isRunning = !1, this.timer.clearTimeout(this.pingTimer), this.timer.clearTimeout(this.pongTimeoutTimer);
   }
   handleDefaultTimeout(e) {
-    this.stop(), e && e(), this.emit(p.Timeout);
+    this.stop(), e && e(), this.emit(b.Timeout);
   }
   recordPong() {
-    this.lastPongTime = Date.now(), clearTimeout(this.timeoutId), this.emit(p.Pong, Date.now() - this.lastPongTime);
+    const e = Date.now(), t = this.lastPingTime ? e - this.lastPingTime : 0;
+    this.lastPongTime = e, this.timer.clearTimeout(this.pongTimeoutTimer), this.emit(b.Pong, t), this.schedulePongTimeoutCheck();
   }
   getLastPongTime() {
     return this.lastPongTime;
   }
+  /**
+   * 基于真实时间差做一次超时校验（用于从后台切回前台等场景）
+   * @returns true 表示已超时
+   */
+  checkTimeout() {
+    if (!this.isRunning)
+      return !1;
+    const e = this.config.timeout ?? 0;
+    return e ? Date.now() - this.lastPongTime > e : !1;
+  }
   updateConfig(e) {
+    var t, s, n, r;
     if (!(e != null && e.isNeedHeartbeat)) {
-      this.stop();
+      this.stop(), (s = (t = this.timer).destroy) == null || s.call(t);
       return;
     }
-    this.config = { ...this.config, ...e.heartbeat }, this.stop(), this.start();
+    this.config = { ...this.config, ...e.heartbeat }, (r = (n = this.timer).destroy) == null || r.call(n), this.timer = R(this.config), this.stop(), this.start();
+  }
+  scheduleNextPing() {
+    if (!this.isRunning)
+      return;
+    const e = this.config.interval ?? 0, t = Date.now();
+    (this.expectedNextPingAt <= 0 || t - this.expectedNextPingAt > e) && (this.expectedNextPingAt = t + e);
+    const s = Math.max(0, this.expectedNextPingAt - t);
+    this.timer.clearTimeout(this.pingTimer), this.pingTimer = this.timer.setTimeout(() => {
+      this.isRunning && (this.lastPingTime = Date.now(), this.sendPing(), this.expectedNextPingAt = this.expectedNextPingAt + e, this.scheduleNextPing());
+    }, s);
+  }
+  /**
+   * 超时检测应以 lastPongTime 为基准：
+   * - interval 可能小于 timeout，不能在每次 ping 时重置 timeout，否则会导致永不超时
+   * - 这里只在 start/recordPong 时重置检测定时器
+   */
+  schedulePongTimeoutCheck() {
+    if (!this.isRunning)
+      return;
+    const e = this.config.timeout ?? 0;
+    if (e <= 0)
+      return;
+    this.timer.clearTimeout(this.pongTimeoutTimer);
+    const t = this.lastPongTime + e, s = Math.max(0, t - Date.now());
+    this.pongTimeoutTimer = this.timer.setTimeout(() => {
+      if (this.isRunning) {
+        if (this.checkTimeout()) {
+          this.handleDefaultTimeout(this.config.onTimeout);
+          return;
+        }
+        this.schedulePongTimeoutCheck();
+      }
+    }, s);
   }
 }
-class O {
+class D {
   constructor(e, t) {
     this.maxConcurrent = e, this.onTaskError = t, this.queue = [], this.runningCount = 0;
   }
   add(e, t) {
-    return new Promise((n, s) => {
-      const o = async () => {
-        var r;
+    return new Promise((s, n) => {
+      const r = async () => {
+        var o;
         try {
-          await e(), n();
+          await e(), s();
         } catch (a) {
-          (r = this.onTaskError) == null || r.call(this, a), s(a);
+          (o = this.onTaskError) == null || o.call(this, a), n(a);
         }
       };
-      this.queue.push({ task: o, priority: t }), this.queue.sort((r, a) => a.priority - r.priority), this.run();
+      this.queue.push({ task: r, priority: t }), this.queue.sort((o, a) => a.priority - o.priority), this.run();
     });
   }
   run() {
@@ -158,20 +314,21 @@ class O {
   }
 }
 var f = /* @__PURE__ */ ((i) => (i.Open = "open", i.Message = "message", i.Close = "close", i.Error = "error", i.Reconnect = "reconnect", i.Heartbeat = "heartbeat", i.Latency = "latency", i.OverMaxReconnectAttempts = "overMaxReconnectAttempts", i))(f || {});
-const S = [
+const q = [
   "open",
   "message",
   "close",
-  "error"
-  /* Error */
-], y = (i, e) => {
+  "error",
+  "heartbeat"
+  /* Heartbeat */
+], _ = (i, e) => {
   const t = { ...i };
-  for (const n in e) {
-    const s = e[n];
-    s && typeof s == "object" && !Array.isArray(s) ? t[n] = y(i[n] || {}, s) : t[n] = s;
+  for (const s in e) {
+    const n = e[s];
+    n && typeof n == "object" && !Array.isArray(n) ? t[s] = _(i[s] || {}, n) : t[s] = n;
   }
   return t;
-}, b = (i, e) => {
+}, A = (i, e) => {
   if (i === e)
     return !0;
   if (i == null || e == null || typeof i != "object" || typeof e != "object")
@@ -179,82 +336,85 @@ const S = [
   if (Array.isArray(i) && Array.isArray(e)) {
     if (i.length !== e.length)
       return !1;
-    for (let s = 0; s < i.length; s++)
-      if (!b(i[s], e[s]))
+    for (let n = 0; n < i.length; n++)
+      if (!A(i[n], e[n]))
         return !1;
     return !0;
   }
   if (Array.isArray(i) || Array.isArray(e))
     return !1;
-  const t = Object.keys(i), n = Object.keys(e);
-  if (t.length !== n.length)
+  const t = Object.keys(i), s = Object.keys(e);
+  if (t.length !== s.length)
     return !1;
-  for (const s of t)
-    if (!e.hasOwnProperty(s) || !b(i[s], e[s]))
+  for (const n of t)
+    if (!e.hasOwnProperty(n) || !A(i[n], e[n]))
       return !1;
   return !0;
 };
-var d = /* @__PURE__ */ ((i) => (i.MsgPackNotInstalled = "MSG_PACK_NOT_INSTALLED", i.AckTimeout = "ACK_TIMEOUT", i.AckMaxRetries = "ACK_MAX_RETRIES", i.ClosedBeforeAck = "CLOSED_BEFORE_ACK", i))(d || {});
-const M = {
+var g = /* @__PURE__ */ ((i) => (i.MsgPackNotInstalled = "MSG_PACK_NOT_INSTALLED", i.AckTimeout = "ACK_TIMEOUT", i.AckMaxRetries = "ACK_MAX_RETRIES", i.ClosedBeforeAck = "CLOSED_BEFORE_ACK", i))(g || {});
+const z = {
   MSG_PACK_NOT_INSTALLED: "MsgPack serializer requires @msgpack/msgpack installation",
   ACK_TIMEOUT: "ACK timeout",
   ACK_MAX_RETRIES: "ACK timeout, maximum retry attempts reached",
   CLOSED_BEFORE_ACK: "WebSocket connection closed before ACK was received"
 };
-class m extends Error {
+class p extends Error {
   constructor(e) {
-    super(M[e]), this.code = e, this.name = "WebSocketClientError";
+    super(z[e]), this.code = e, this.name = "WebSocketClientError";
   }
 }
-class N extends A {
-  constructor(e, t, n) {
-    super(), this.url = e, this.protocols = t, this.config = n, this.socket = null, this.reconnectAttempts = 0, this.messageQueue = [], this.pendingAcks = /* @__PURE__ */ new Map(), this.isUpdatingConfig = !1, this.configQueue = [], this.currentConfig = y(_, this.config), this.initHeartbeat(), this.scheduler = new O(
+class L extends P {
+  constructor(e, t, s) {
+    super(), this.url = e, this.protocols = t, this.config = s, this.socket = null, this.reconnectAttempts = 0, this.messageQueue = [], this.pendingAcks = /* @__PURE__ */ new Map(), this.isUpdatingConfig = !1, this.configQueue = [], this.currentConfig = _(k, this.config), this.initHeartbeat(), this.scheduler = new D(
       this.currentConfig.maxConcurrent,
-      (s) => this.emit(f.Error, s)
+      (n) => this.emit(f.Error, n)
     ), this.connect();
   }
   // 初始化心跳
   initHeartbeat() {
-    this.currentConfig.isNeedHeartbeat && (this.heartbeat = new E(this.currentConfig.heartbeat, () => {
+    this.currentConfig.isNeedHeartbeat && (this.heartbeat = new I(this.currentConfig.heartbeat, () => {
+      const e = this.currentConfig.heartbeat, t = typeof (e == null ? void 0 : e.getPing) == "function" ? e.getPing() : (e == null ? void 0 : e.pingMessage) ?? y.Ping;
+      this.sendHeartbeat(t);
+    }), this.heartbeat.on(b.Timeout, () => {
       var e;
-      this.send(((e = this.currentConfig.heartbeat) == null ? void 0 : e.message) || "PING");
-    }), this.heartbeat.on(p.Timeout, () => {
-      var e;
-      w().warn("Heartbeat timeout, triggering reconnect..."), ((e = this.socket) == null ? void 0 : e.readyState) === WebSocket.OPEN && this.close(1e3, "heartbeat timeout"), this.scheduleReconnect();
+      T().warn("Heartbeat timeout, triggering reconnect..."), ((e = this.socket) == null ? void 0 : e.readyState) === WebSocket.OPEN && this.close(1e3, "heartbeat timeout"), this.scheduleReconnect();
+    }), this.heartbeat.on(b.Pong, (e) => {
+      this.emit(f.Heartbeat, e);
     }));
   }
   connect() {
     this.socket = new WebSocket(this.url, this.protocols), this.socket.binaryType = "arraybuffer", this.socket.onopen = (e) => {
       this.reconnectAttempts = 0, clearTimeout(this.reconnectTimer), this.heartbeat && this.heartbeat.start(), this.flushMessageQueue(), this.emit(f.Open, e);
     }, this.socket.onmessage = (e) => {
-      if (e.data === k.Pong) {
+      const t = e.data;
+      let s = t;
+      try {
+        s = this.currentConfig.serializer.deserialize(t);
+      } catch {
+        s = t;
+      }
+      const n = this.currentConfig.heartbeat;
+      if (typeof (n == null ? void 0 : n.isPong) == "function" ? n.isPong(t, s) : (n == null ? void 0 : n.pongMessage) !== void 0 && (t === n.pongMessage || s === n.pongMessage)) {
         this.heartbeat && this.heartbeat.recordPong();
         return;
       }
-      const t = e.data;
-      let n = t;
-      try {
-        n = this.currentConfig.serializer.deserialize(t);
-      } catch {
-        n = t;
-      }
-      const s = this.currentConfig.ack;
-      if (s != null && s.enabled && typeof s.extractAckId == "function") {
-        const r = s.extractAckId(n);
-        if (r != null) {
-          const a = this.pendingAcks.get(r);
-          if (a) {
-            clearTimeout(a.timer), this.pendingAcks.delete(r), a.resolve();
+      const o = this.currentConfig.ack;
+      if (o != null && o.enabled && typeof o.extractAckId == "function") {
+        const c = o.extractAckId(s);
+        if (c != null) {
+          const d = this.pendingAcks.get(c);
+          if (d) {
+            clearTimeout(d.timer), this.pendingAcks.delete(c), d.resolve();
             return;
           }
         }
       }
-      const o = this.currentConfig.sequence;
-      if (o != null && o.enabled && typeof o.extractInboundSeq == "function") {
-        const r = o.extractInboundSeq(n);
-        r != null && (this.lastInboundSeq = r);
+      const a = this.currentConfig.sequence;
+      if (a != null && a.enabled && typeof a.extractInboundSeq == "function") {
+        const c = a.extractInboundSeq(s);
+        c != null && (this.lastInboundSeq = c);
       }
-      this.emit(f.Message, n);
+      this.emit(f.Message, s);
     }, this.socket.onclose = (e) => {
       this.heartbeat && this.heartbeat.stop(), this.emit(f.Close, e);
     }, this.socket.onerror = (e) => {
@@ -265,6 +425,21 @@ class N extends A {
     var t;
     ((t = this.socket) == null ? void 0 : t.readyState) === WebSocket.OPEN && this.socket.send(e);
   }
+  /**
+   * 心跳专用发送通道：
+   * - 绕过 TaskScheduler（不占用并发槽位）
+   * - 不参与 ACK / 序列号包装（保持尽可能轻量）
+   */
+  sendHeartbeat(e) {
+    var t;
+    if (((t = this.socket) == null ? void 0 : t.readyState) === WebSocket.OPEN)
+      try {
+        const s = this.currentConfig.serializer.serialize(e);
+        this.sendRaw(s);
+      } catch (s) {
+        this.emit(f.Error, s);
+      }
+  }
   scheduleReconnect() {
     if (this.reconnectAttempts >= this.currentConfig.maxReconnectAttempts) {
       this.emit(f.OverMaxReconnectAttempts);
@@ -273,69 +448,78 @@ class N extends A {
     const e = Math.min(
       this.currentConfig.reconnectDelay * Math.pow(this.currentConfig.reconnectExponent, this.reconnectAttempts),
       this.currentConfig.maxReconnectDelay
-    ), n = e * 0.2 * (Math.random() * 2 - 1), s = Math.max(1e3, e + n);
+    ), s = e * 0.2 * (Math.random() * 2 - 1), n = Math.max(1e3, e + s);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts++, this.connect();
-    }, s);
+    }, n);
   }
   flushMessageQueue() {
     for (; this.messageQueue.length > 0; ) {
-      const { data: e, priority: t, needAck: n, resolve: s, reject: o } = this.messageQueue.shift();
-      this.sendInternal(e, t, n).then(s).catch(o);
+      const { data: e, priority: t, needAck: s, resolve: n, reject: r } = this.messageQueue.shift();
+      this.sendInternal(e, t, s).then(n).catch(r);
     }
   }
-  sendInternal(e, t, n) {
-    var s;
-    return ((s = this.socket) == null ? void 0 : s.readyState) === WebSocket.OPEN ? this.scheduler.add(() => new Promise((o, r) => {
-      var a, C;
-      try {
-        let l = e;
-        const u = this.currentConfig.sequence;
-        if (u != null && u.enabled && typeof u.wrapOutbound == "function") {
-          const h = (a = u.generateSeq) == null ? void 0 : a.call(u);
-          h !== void 0 && (l = u.wrapOutbound(h, l));
+  sendInternal(e, t, s) {
+    var n;
+    if (((n = this.socket) == null ? void 0 : n.readyState) === WebSocket.OPEN) {
+      const r = this.currentConfig.ack;
+      let o = null, a, c;
+      const d = s ? new Promise((u, h) => {
+        a = u, c = h;
+      }) : void 0, x = this.scheduler.add(async () => {
+        var C, M;
+        let u = e;
+        const h = this.currentConfig.sequence;
+        if (h != null && h.enabled && typeof h.wrapOutbound == "function") {
+          const l = (C = h.generateSeq) == null ? void 0 : C.call(h);
+          l !== void 0 && (u = h.wrapOutbound(l, u));
         }
-        const c = this.currentConfig.ack;
-        let g = null;
-        if (n && (c != null && c.enabled)) {
-          const h = (C = c.generateId) == null ? void 0 : C.call(c);
-          h != null && typeof c.wrapOutbound == "function" && (g = h, l = c.wrapOutbound(h, l));
+        if (s && (r != null && r.enabled)) {
+          const l = (M = r.generateId) == null ? void 0 : M.call(r);
+          l != null && typeof r.wrapOutbound == "function" && (o = l, u = r.wrapOutbound(l, u));
         }
-        const T = this.currentConfig.serializer.serialize(l);
-        if (this.sendRaw(T), !n || !(c != null && c.enabled) || g === null) {
-          o();
+        const v = this.currentConfig.serializer.serialize(u);
+        if (this.sendRaw(v), !s || !(r != null && r.enabled) || o === null)
           return;
-        }
-        const x = c.timeout ?? 5e3, q = c.maxRetries ?? 0, I = {
-          resolve: o,
-          reject: (h) => r(h),
+        const E = r.timeout ?? 5e3;
+        this.pendingAcks.set(o, {
+          resolve: () => a == null ? void 0 : a(),
+          reject: (l) => c == null ? void 0 : c(l),
           retries: 0,
           rawData: e,
           priority: t,
           timer: setTimeout(() => {
-            this.handleAckTimeout(g);
-          }, x)
-        };
-        this.pendingAcks.set(g, I);
-      } catch (l) {
-        r(l);
-      }
-    }), t) : new Promise((o, r) => {
-      this.messageQueue.push({ data: e, priority: t, needAck: n, resolve: o, reject: r });
+            this.handleAckTimeout(o);
+          }, E)
+        });
+      }, t);
+      return s ? x.catch((u) => {
+        if (o !== null) {
+          const h = this.pendingAcks.get(o);
+          h && (clearTimeout(h.timer), this.pendingAcks.delete(o));
+        }
+        throw c == null || c(u), u;
+      }).then(() => {
+        if (!(!(r != null && r.enabled) || o === null || !d))
+          return d;
+      }) : x;
+    }
+    return new Promise((r, o) => {
+      this.messageQueue.push({ data: e, priority: t, needAck: s, resolve: r, reject: o });
     });
   }
   handleAckTimeout(e) {
-    const t = this.currentConfig.ack, n = this.pendingAcks.get(e);
-    if (!n || !(t != null && t.enabled)) {
-      n && (this.pendingAcks.delete(e), n.reject(new m(d.AckTimeout)));
+    const t = this.currentConfig.ack, s = this.pendingAcks.get(e);
+    if (!s || !(t != null && t.enabled)) {
+      s && (this.pendingAcks.delete(e), s.reject(new p(g.AckTimeout)));
       return;
     }
-    const s = t.timeout ?? 5e3, o = t.maxRetries ?? 0;
-    n.retries < o ? (n.retries += 1, this.sendInternal(n.rawData, n.priority, !1).catch(
-      n.reject
-    ), n.timer = setTimeout(() => {
+    const n = t.timeout ?? 5e3, r = t.maxRetries ?? 0;
+    s.retries < r ? (s.retries += 1, this.sendInternal(s.rawData, s.priority, !1).catch(
+      s.reject
+    ), s.timer = setTimeout(() => {
       this.handleAckTimeout(e);
-    }, s)) : (this.pendingAcks.delete(e), n.reject(new m(d.AckMaxRetries)));
+    }, n)) : (this.pendingAcks.delete(e), s.reject(new p(g.AckMaxRetries)));
   }
   send(e, t = this.currentConfig.defaultPriority) {
     return this.sendInternal(e, t, !1);
@@ -344,11 +528,17 @@ class N extends A {
   sendWithAck(e, t = this.currentConfig.defaultPriority) {
     return this.sendInternal(e, t, !0);
   }
+  getLastInboundSeq() {
+    return this.lastInboundSeq;
+  }
+  updateLastInboundSeq(e) {
+    this.lastInboundSeq = e;
+  }
   close(e, t) {
-    var n;
-    clearTimeout(this.reconnectTimer), this.heartbeat && this.heartbeat.stop(), this.pendingAcks.forEach((s, o) => {
-      clearTimeout(s.timer), s.reject(new m(d.ClosedBeforeAck)), this.pendingAcks.delete(o);
-    }), (n = this.socket) == null || n.close(e, t), this.socket = null;
+    var s;
+    clearTimeout(this.reconnectTimer), this.heartbeat && this.heartbeat.stop(), this.pendingAcks.forEach((n, r) => {
+      clearTimeout(n.timer), n.reject(new p(g.ClosedBeforeAck)), this.pendingAcks.delete(r);
+    }), (s = this.socket) == null || s.close(e, t), this.socket = null;
   }
   reconnect() {
     clearTimeout(this.reconnectTimer), this.reconnectAttempts = 0, this.close(), this.connect();
@@ -365,11 +555,11 @@ class N extends A {
   }
   applyConfigSafely(e) {
     const t = { ...this.currentConfig };
-    this.currentConfig = y(this.currentConfig, e), this.handleConfigChange(t, this.currentConfig), this.applyConfig();
+    this.currentConfig = _(this.currentConfig, e), this.handleConfigChange(t, this.currentConfig), this.applyConfig();
   }
   // 处理特定配置变更
   handleConfigChange(e, t) {
-    b(e.heartbeat, t.heartbeat) || this.reInitHeartbeat(), (e.maxReconnectAttempts !== t.maxReconnectAttempts || e.reconnectDelay !== t.reconnectDelay || e.reconnectExponent !== t.reconnectExponent || e.maxReconnectDelay !== t.maxReconnectDelay) && this.resetReconnectTimer();
+    A(e.heartbeat, t.heartbeat) || this.reInitHeartbeat(), (e.maxReconnectAttempts !== t.maxReconnectAttempts || e.reconnectDelay !== t.reconnectDelay || e.reconnectExponent !== t.reconnectExponent || e.maxReconnectDelay !== t.maxReconnectDelay) && this.resetReconnectTimer();
   }
   // 应用新配置到各模块
   applyConfig() {
@@ -388,59 +578,60 @@ class N extends A {
     this.reconnectTimer && (clearTimeout(this.reconnectTimer), this.scheduleReconnect());
   }
 }
-class D extends A {
+class j extends P {
   constructor(e) {
     super(), this.config = e, this.clients = /* @__PURE__ */ new Map();
   }
   connect(e, t = []) {
-    const n = `${e}|${t.join(",")}`;
-    if (this.clients.has(n))
-      return this.clients.get(n);
-    const s = new N(e, t, this.config);
-    this.clients.set(n, s);
-    const o = (r) => (a) => {
-      this.emit(r, { url: e, protocols: t, data: a });
+    const s = `${e}|${t.join(",")}`;
+    if (this.clients.has(s))
+      return this.clients.get(s);
+    const n = new L(e, t, this.config);
+    this.clients.set(s, n);
+    const r = (o) => (a) => {
+      this.emit(o, { url: e, protocols: t, data: a });
     };
-    return S.forEach((r) => {
-      s.on(r, o(r));
-    }), s;
+    return q.forEach((o) => {
+      n.on(o, r(o));
+    }), n;
   }
   closeAll(e, t) {
-    this.clients.forEach((n) => n.close(e, t)), this.clients.clear();
+    this.clients.forEach((s) => s.close(e, t)), this.clients.clear();
   }
   getClient(e, t) {
-    const n = `${e}|${(t == null ? void 0 : t.join(",")) || ""}`;
-    return this.clients.get(n);
+    const s = `${e}|${(t == null ? void 0 : t.join(",")) || ""}`;
+    return this.clients.get(s);
   }
 }
-const z = (i = {}) => {
+const U = (i = {}) => {
   const e = {
-    ..._,
+    ...k,
     ...i,
     serializer: {
-      ..._.serializer,
+      ...k.serializer,
       ...i.serializer
     }
   };
-  return new D(e);
-}, j = {
+  return new j(e);
+}, H = {
   serialize: JSON.stringify,
   deserialize: JSON.parse
-}, v = {
+}, K = {
   serialize: (i) => {
-    throw new m(d.MsgPackNotInstalled);
+    throw new p(g.MsgPackNotInstalled);
   },
   deserialize: (i) => {
-    throw new m(d.MsgPackNotInstalled);
+    throw new p(g.MsgPackNotInstalled);
   }
 };
 export {
-  A as EventEmitter,
-  p as HeartbeatEvent,
-  k as HeartbeatMessage,
-  j as JsonSerializer,
-  v as MsgPackSerializer,
-  N as WebSocketClient,
-  D as WebSocketManager,
-  z as createWebSocketManager
+  P as EventEmitter,
+  b as HeartbeatEvent,
+  y as HeartbeatMessage,
+  m as HeartbeatTimerMode,
+  H as JsonSerializer,
+  K as MsgPackSerializer,
+  L as WebSocketClient,
+  j as WebSocketManager,
+  U as createWebSocketManager
 };

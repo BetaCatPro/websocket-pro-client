@@ -15,7 +15,17 @@ class ConsoleLogger implements Logger {
   }
 
   debug(...args: any[]) {
-    if (import.meta && import.meta.env && import.meta.env.DEV) {
+    const isDev =
+      // Vite / modern bundlers may inject import.meta.env
+      (typeof import.meta !== "undefined" &&
+        (import.meta as any)?.env &&
+        (import.meta as any).env.DEV) ||
+      // Node / other bundlers
+      (typeof process !== "undefined" &&
+        (process as any)?.env &&
+        (process as any).env.NODE_ENV !== "production")
+
+    if (isDev) {
       console.debug(this.prefix, ...args)
     }
   }

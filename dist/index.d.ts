@@ -36,4 +36,5 @@ export declare const JsonSerializer: Serializer;
 export declare const MsgPackSerializer: Serializer;
 export type { WebSocketConfig, WebSocketEvent, IWebSocketManager, IWebSocketClient, Serializer, };
 export { HeartbeatMessage, HeartbeatEvent } from './constants/heartbeat';
+export { HeartbeatTimerMode } from './constants/heartbeat';
 export { EventEmitter, WebSocketManager, WebSocketClient } from './core';
