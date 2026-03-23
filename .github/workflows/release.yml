@@ -1,26 +1,26 @@
-name: Publish to NPM
+name: Release to NPM
 
 on:
   push:
-    branches: [master] # 只在master分支推送时触发（用于CI，不发布）
-    tags: ["v*.*.*"] # 监听语义化版本tag（用于发布）
+    tags: ["v*.*.*"]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm i --legacy-peer-deps
 
       - name: Run tests
         run: npm test
@@ -35,7 +35,7 @@ jobs:
 
       - name: Publish to npm
         run: |
-          if node -p "require('./package.json').version.includes('-')"; then
+          if [ "$(node -p "require('./package.json').version.includes('-')")" = "true" ]; then
             npm publish --tag beta
           else
             npm publish

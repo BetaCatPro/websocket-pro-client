@@ -14,6 +14,8 @@
 - 🔄 运行时更新配置（心跳、重连策略等）
 - ✅ 内置消息 ACK 机制（默认实现 + 完全可自定义）
 - 🔢 消息序列号支持（默认自增，可自定义包装与解析）
+- 🧭 消息主题/类型订阅（支持通配符（`order.*`）+ 自动重订阅）
+- 📊 运行状态与统计
 - 🔍 完整 TypeScript 类型定义
 
 ---
@@ -87,7 +89,7 @@ export interface IWebSocketManager {
 - **`closeAll(code?, reason?)`**
   - 关闭当前 manager 管理的所有连接。
 - **`on(event, listener)`**
-  - 监听所有客户端转发上来的事件（`open/message/close/error` 等），回调中会携带 `{ url, protocols, data }`。
+  - 监听所有客户端转发上来的事件（包含 `open/message/close/error/reconnect/heartbeat/latency/overMaxReconnectAttempts`），回调中会携带 `{ url, protocols, data }`。
 
 示例：
 
@@ -111,6 +113,11 @@ export interface IWebSocketClient {
   sendWithAck(data: any, priority?: number): Promise<void>
   getLastInboundSeq(): string | number | undefined
   updateLastInboundSeq(seq: string | number): void
+  subscribe(topic: string, listener: (data: any) => void): () => void
+  unsubscribe(topic: string, listener?: (data: any) => void): void
+  getState(): WebSocketClientState
+  getStats(): WebSocketClientStats
+  resetStats(options?: ResetStatsOptions): void
   close(code?: number, reason?: string): void
   reconnect(): void
   on(event: WebSocketEvent, listener: (data: any) => void): void
@@ -137,11 +144,67 @@ export interface IWebSocketClient {
   - 手动更新最后一次入站 `seq`。
   - 常用于补拉：当你已经把本地数据处理到最新 `seq` 后，同步回 client，避免后续补拉仍使用旧值。
 
+- **`getState()`**
+  - 获取当前客户端运行状态（`WebSocketClientState` 枚举）：
+    - `WebSocketClientState.Connecting`
+    - `WebSocketClientState.Open`
+    - `WebSocketClientState.Reconnecting`
+    - `WebSocketClientState.Closed`
+    - `WebSocketClientState.OverMaxReconnectAttempts`
+
+- **`getStats()`**
+  - 获取运行统计信息，用于调试与监控：
+    - `sentCount`：发送消息总数
+    - `receivedCount`：接收消息总数
+    - `errorCount`：错误总数
+    - `reconnectScheduledCount`：触发重连调度总数
+    - `ackTimeoutCount`：ACK 最终超时次数
+    - `reconnectAttempts`：重连尝试次数
+    - `pendingAcksCount`：等待 ACK 的数量
+    - `messageQueueLength`：离线待发送队列长度
+    - `subscribedTopicCount`：订阅主题数量
+    - `subscriptionListenerCount`：订阅监听器总数
+    - `lastInboundSeq`：最近一次入站 seq
+    - `socketReadyState`：底层 WebSocket readyState
+    - `lastHeartbeatLatency`：最近一次心跳延迟（ms）
+    - `lastErrorAt`：最近一次错误时间戳（ms）
+    - `lastCloseCode/lastCloseReason/lastCloseAt`：最近一次关闭信息
+
+- **`resetStats()`**
+  - 重置统计指标计数与最近状态字段（如 `sentCount/errorCount/lastErrorAt` 等）。
+  - 不会影响连接状态、订阅关系、待 ACK 列表和消息队列。
+  - 支持可选参数：
+    - `resetCounters`：是否重置计数指标（默认 `true`）
+    - `resetLastEvents`：是否重置最近事件字段（默认 `true`）
+
+```ts
+type ResetStatsOptions = {
+  resetCounters?: boolean
+  resetLastEvents?: boolean
+}
+```
+
 - **`close(code?, reason?)`**
   - 主动关闭当前连接，并清理所有等待中的 ACK。
 
 - **`reconnect()`**
   - 立即重连一次（会重置重连计数和退避延迟）。
+  - `close()` 属于主动关闭，不会自动重连；非主动断开（如服务端关闭/网络中断）会按重连策略自动重连。
+
+- **`subscribe(topic, listener)`**
+  - 订阅某个 topic 的消息，返回取消订阅函数。
+  - topic 支持通配符 `*`：
+    - `order.*` 匹配 `order.created` / `order.updated` 等任意后缀
+  - 默认会通过 `subscription.extractTopic` 从入站消息提取 topic（默认读取 `message.topic`）并分发到对应 listener。
+  - 如果配置了 `subscription.buildSubscribeMessage`，会在首次订阅 topic 时发送订阅报文。
+
+- **`unsubscribe(topic, listener?)`**
+  - 取消某个 topic 的订阅。
+  - 传 `listener` 时仅移除该监听器；不传则移除该 topic 下所有监听器。
+  - 如果配置了 `subscription.buildUnsubscribeMessage`，在该 topic 没有监听器后会发送取消订阅报文。
+
+- **`subscribeOnce(topic, listener)`**
+  - 订阅某个 topic 的消息，但只触发一次，触发后会自动退订。
 
 - **事件监听**
 
@@ -195,8 +258,12 @@ export interface WebSocketConfig {
 
   // 消息序列号
   sequence?: SequenceStrategy
+  // 主题订阅
+  subscription?: SubscriptionStrategy
 }
 ```
+
+> `createWebSocketManager` 会将配置与默认值做**深度合并**。例如仅传 `ack.timeout`，`ack.enabled/generateId/wrapOutbound/extractAckId` 等默认项仍会保留。
 
 ### 1. 心跳配置 HeartbeatConfig
 
@@ -311,6 +378,43 @@ export type SequenceStrategy = {
 - `extractInboundSeq`: 从 `message.seq` 中提取序列号。
 
 > 库内部只负责“生成/包装/解析”序列号，不做强制的乱序丢弃；你可以在 `message` 监听回调中结合 `seq` 做业务上的顺序控制。
+
+### 4. 主题订阅配置 SubscriptionStrategy
+
+```ts
+export type SubscriptionStrategy = {
+  extractTopic?: (message: any) => string | null
+  buildSubscribeMessage?: (topic: string) => any
+  buildUnsubscribeMessage?: (topic: string) => any
+  autoResubscribe?: boolean
+}
+```
+
+默认实现：
+
+- `extractTopic`: 读取 `message.topic`（字符串）
+- `autoResubscribe: true`
+- 不会默认发送订阅/取消订阅报文（需自行提供 `buildSubscribeMessage/buildUnsubscribeMessage`）
+
+示例：
+
+```ts
+const manager = createWebSocketManager({
+  subscription: {
+    buildSubscribeMessage: (topic) => ({ type: "SUBSCRIBE", topic }),
+    buildUnsubscribeMessage: (topic) => ({ type: "UNSUBSCRIBE", topic }),
+    autoResubscribe: true,
+  },
+})
+
+const client = manager.connect("wss://api.example.com")
+const dispose = client.subscribe("order.updated", (msg) => {
+  console.log("order event:", msg)
+})
+
+// 也可以主动取消
+dispose()
+```
 
 ---
 

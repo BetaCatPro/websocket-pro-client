@@ -1,4 +1,4 @@
-import { WebSocketConfig, WebSocketEvent, IWebSocketManager, IWebSocketClient, Serializer } from './types';
+import { WebSocketClientState, WebSocketConfig, WebSocketEvent, WebSocketClientStats, IWebSocketManager, IWebSocketClient, SubscriptionStrategy, Serializer } from './types';
 /**
  * 创建 WebSocket 管理器实例
  * @param config 可选配置项
@@ -34,7 +34,8 @@ export declare const JsonSerializer: Serializer;
  * ```
  */
 export declare const MsgPackSerializer: Serializer;
-export type { WebSocketConfig, WebSocketEvent, IWebSocketManager, IWebSocketClient, Serializer, };
+export type { WebSocketConfig, WebSocketEvent, WebSocketClientStats, IWebSocketManager, IWebSocketClient, SubscriptionStrategy, Serializer, };
+export { WebSocketClientState };
 export { HeartbeatMessage, HeartbeatEvent } from './constants/heartbeat';
 export { HeartbeatTimerMode } from './constants/heartbeat';
 export { EventEmitter, WebSocketManager, WebSocketClient } from './core';
