@@ -1,7 +1,7 @@
 import { WebSocketClient } from "./WebSocketClient"
 import { EventEmitter } from "./EventEmitter"
 import { WebSocketConfig, WebSocketEvent } from "../types"
-import { CORE_WEB_SOCKET_EVENTS } from "../constants/events"
+import { ALL_WEB_SOCKET_EVENTS } from "../constants/events"
 
 export class WebSocketManager extends EventEmitter {
   private readonly clients: Map<string, WebSocketClient> = new Map()
@@ -25,7 +25,7 @@ export class WebSocketManager extends EventEmitter {
       this.emit(event, { url, protocols, data })
     }
 
-    CORE_WEB_SOCKET_EVENTS.forEach((event) => {
+    ALL_WEB_SOCKET_EVENTS.forEach((event) => {
       client.on(event, forwardEvent(event))
     })
 

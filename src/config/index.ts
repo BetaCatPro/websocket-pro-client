@@ -33,7 +33,10 @@ export const DEFAULT_CONFIG: Required<WebSocketConfig> = {
       id,
       payload: data,
     }),
-    extractAckId: (msg) => (msg && typeof msg === "object" ? msg.id : null),
+    extractAckId: (msg) =>
+      msg && typeof msg === "object" && "ackId" in msg
+        ? (msg as any).ackId
+        : null,
   },
   sequence: {
     enabled: true,

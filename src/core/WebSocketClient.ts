@@ -13,6 +13,7 @@ export class WebSocketClient extends EventEmitter {
   private socket: WebSocket | null = null
   private reconnectAttempts = 0
   private reconnectTimer?: ReturnType<typeof setTimeout>
+  private isManualClose = false
   private readonly messageQueue: Array<{
     data: any
     priority: number
@@ -80,18 +81,25 @@ export class WebSocketClient extends EventEmitter {
 
     this.heartbeat.on(HeartbeatEvent.Pong, (latency) => {
       this.emit(WebSocketEvent.Heartbeat, latency)
+      this.emit(WebSocketEvent.Latency, latency)
     })
   }
 
   private connect(): void {
+    this.isManualClose = false
     this.socket = new WebSocket(this.url, this.protocols)
     this.socket.binaryType = "arraybuffer"
 
     this.socket.onopen = (event) => {
+      const wasReconnecting = this.reconnectAttempts > 0
       this.reconnectAttempts = 0
       clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
       this.heartbeat && this.heartbeat.start()
       this.flushMessageQueue()
+      if (wasReconnecting) {
+        this.emit(WebSocketEvent.Reconnect)
+      }
       this.emit(WebSocketEvent.Open, event)
     }
 
@@ -151,6 +159,9 @@ export class WebSocketClient extends EventEmitter {
     this.socket.onclose = (event) => {
       this.heartbeat && this.heartbeat.stop()
       this.emit(WebSocketEvent.Close, event)
+      if (!this.isManualClose) {
+        this.scheduleReconnect()
+      }
     }
 
     this.socket.onerror = (event) => {
@@ -183,6 +194,7 @@ export class WebSocketClient extends EventEmitter {
   }
 
   private scheduleReconnect(): void {
+    if (this.reconnectTimer) return
     if (this.reconnectAttempts >= this.currentConfig.maxReconnectAttempts) {
       this.emit(WebSocketEvent.OverMaxReconnectAttempts)
       return
@@ -200,7 +212,12 @@ export class WebSocketClient extends EventEmitter {
     const actualDelay = Math.max(1000, delay + jitter) // 保证至少1秒
 
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
       this.reconnectAttempts++
+      this.emit(WebSocketEvent.Reconnect, {
+        attempt: this.reconnectAttempts,
+        delay: actualDelay,
+      })
       this.connect()
     }, actualDelay)
   }
@@ -358,7 +375,9 @@ export class WebSocketClient extends EventEmitter {
   }
 
   close(code?: number, reason?: string): void {
+    this.isManualClose = true
     clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
     this.heartbeat && this.heartbeat.stop()
     // 关闭时清空所有等待中的 ACK，避免 Promise 永远不结束
     this.pendingAcks.forEach((entry, id) => {
@@ -372,8 +391,10 @@ export class WebSocketClient extends EventEmitter {
 
   reconnect(): void {
     clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = undefined
     this.reconnectAttempts = 0
     this.close()
+    this.isManualClose = false
     this.connect()
   }
 

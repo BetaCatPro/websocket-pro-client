@@ -87,7 +87,7 @@ export interface IWebSocketManager {
 - **`closeAll(code?, reason?)`**
   - 关闭当前 manager 管理的所有连接。
 - **`on(event, listener)`**
-  - 监听所有客户端转发上来的事件（`open/message/close/error` 等），回调中会携带 `{ url, protocols, data }`。
+  - 监听所有客户端转发上来的事件（包含 `open/message/close/error/reconnect/heartbeat/latency/overMaxReconnectAttempts`），回调中会携带 `{ url, protocols, data }`。
 
 示例：
 
@@ -142,6 +142,7 @@ export interface IWebSocketClient {
 
 - **`reconnect()`**
   - 立即重连一次（会重置重连计数和退避延迟）。
+  - `close()` 属于主动关闭，不会自动重连；非主动断开（如服务端关闭/网络中断）会按重连策略自动重连。
 
 - **事件监听**
 
@@ -197,6 +198,8 @@ export interface WebSocketConfig {
   sequence?: SequenceStrategy
 }
 ```
+
+> `createWebSocketManager` 会将配置与默认值做**深度合并**。例如仅传 `ack.timeout`，`ack.enabled/generateId/wrapOutbound/extractAckId` 等默认项仍会保留。
 
 ### 1. 心跳配置 HeartbeatConfig
 

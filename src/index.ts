@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from "./config"
 import { WebSocketManager } from "./core/WebSocketManager"
 import { WebSocketClientError, WebSocketErrorCode } from "./constants/errors"
+import { deepMerge } from "./utils"
 import type {
   WebSocketConfig,
   WebSocketEvent,
@@ -25,14 +26,7 @@ import type {
 export const createWebSocketManager = (
   config: Partial<WebSocketConfig> = {},
 ): IWebSocketManager => {
-  const mergedConfig: Required<WebSocketConfig> = {
-    ...DEFAULT_CONFIG,
-    ...config,
-    serializer: {
-      ...DEFAULT_CONFIG.serializer,
-      ...config.serializer,
-    },
-  }
+  const mergedConfig: Required<WebSocketConfig> = deepMerge(DEFAULT_CONFIG, config)
 
   return new WebSocketManager(mergedConfig)
 }
