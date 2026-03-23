@@ -91,6 +91,29 @@ export type SequenceStrategy = {
      */
     extractInboundSeq?: (message: any) => string | number | null;
 };
+/**
+ * 主题订阅配置
+ */
+export type SubscriptionStrategy = {
+    /**
+     * 从入站消息中提取 topic
+     * - 返回 null 表示该消息不参与订阅分发
+     * - 默认：读取 message.topic（字符串）
+     */
+    extractTopic?: (message: any) => string | null;
+    /**
+     * 订阅时发送到服务端的消息构造器（可选）
+     */
+    buildSubscribeMessage?: (topic: string) => any;
+    /**
+     * 取消订阅时发送到服务端的消息构造器（可选）
+     */
+    buildUnsubscribeMessage?: (topic: string) => any;
+    /**
+     * 重连后是否自动重订阅（默认: true）
+     */
+    autoResubscribe?: boolean;
+};
 export interface WebSocketConfig {
     /** 最大重连尝试次数 (默认: 10) */
     maxReconnectAttempts?: number;
@@ -114,6 +137,8 @@ export interface WebSocketConfig {
     ack?: AckStrategy;
     /** 消息序列号配置 */
     sequence?: SequenceStrategy;
+    /** 主题订阅配置 */
+    subscription?: SubscriptionStrategy;
     /** 是否需要心跳 (默认: true) */
     isNeedHeartbeat?: boolean;
     /** 心跳配置 */
@@ -138,6 +163,12 @@ export interface IWebSocketClient {
      * - 常用于补拉接口：当你已经把数据同步到最新 seq 后，调用此方法同步到 client
      */
     updateLastInboundSeq(seq: string | number): void;
+    subscribe(topic: string, listener: (data: any) => void): () => void;
+    /**
+     * 订阅某个 topic 的消息（只触发一次），触发后会自动退订
+     */
+    subscribeOnce(topic: string, listener: (data: any) => void): () => void;
+    unsubscribe(topic: string, listener?: (data: any) => void): void;
     close(code?: number, reason?: string): void;
     reconnect(): void;
     on(event: WebSocketEvent, listener: (data: any) => void): void;

@@ -8,9 +8,11 @@ export declare class WebSocketClient extends EventEmitter {
     private socket;
     private reconnectAttempts;
     private reconnectTimer?;
+    private isManualClose;
     private readonly messageQueue;
     private heartbeat?;
     private readonly scheduler;
+    private readonly topicListeners;
     private readonly pendingAcks;
     private lastInboundSeq?;
     private isUpdatingConfig;
@@ -19,6 +21,9 @@ export declare class WebSocketClient extends EventEmitter {
     private initHeartbeat;
     private connect;
     private sendRaw;
+    private dispatchSubscribedMessage;
+    private isTopicMatch;
+    private reSyncSubscriptions;
     /**
      * 心跳专用发送通道：
      * - 绕过 TaskScheduler（不占用并发槽位）
@@ -33,6 +38,9 @@ export declare class WebSocketClient extends EventEmitter {
     sendWithAck(data: any, priority?: number): Promise<void>;
     getLastInboundSeq(): string | number | undefined;
     updateLastInboundSeq(seq: string | number): void;
+    subscribe(topic: string, listener: (data: any) => void): () => void;
+    subscribeOnce(topic: string, listener: (data: any) => void): () => void;
+    unsubscribe(topic: string, listener?: (data: any) => void): void;
     close(code?: number, reason?: string): void;
     reconnect(): void;
     updateConfig(newConfig: WebSocketConfig): Promise<void>;

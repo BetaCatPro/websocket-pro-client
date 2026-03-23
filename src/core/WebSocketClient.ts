@@ -23,6 +23,7 @@ export class WebSocketClient extends EventEmitter {
   }> = []
   private heartbeat?: Heartbeat
   private readonly scheduler: TaskScheduler
+  private readonly topicListeners = new Map<string, Set<(data: any) => void>>()
 
   // 等待 ACK 的消息：id -> { resolve, reject, timer, retries, rawData }
   private readonly pendingAcks = new Map<
@@ -98,6 +99,7 @@ export class WebSocketClient extends EventEmitter {
       this.heartbeat && this.heartbeat.start()
       this.flushMessageQueue()
       if (wasReconnecting) {
+        this.reSyncSubscriptions()
         this.emit(WebSocketEvent.Reconnect)
       }
       this.emit(WebSocketEvent.Open, event)
@@ -154,6 +156,7 @@ export class WebSocketClient extends EventEmitter {
 
       // 3. 向外仍然分发“解析后”的数据，保持易用
       this.emit(WebSocketEvent.Message, parsed)
+      this.dispatchSubscribedMessage(parsed)
     }
 
     this.socket.onclose = (event) => {
@@ -175,6 +178,60 @@ export class WebSocketClient extends EventEmitter {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(data)
     }
+  }
+
+  private dispatchSubscribedMessage(parsed: any): void {
+    const subscriptionCfg = this.currentConfig.subscription
+    const topic =
+      typeof subscriptionCfg?.extractTopic === "function"
+        ? subscriptionCfg.extractTopic(parsed)
+        : null
+
+    if (!topic) return
+    if (this.topicListeners.size === 0) return
+
+    this.topicListeners.forEach((listeners, pattern) => {
+      if (!this.isTopicMatch(pattern, topic)) return
+
+      listeners.forEach((listener) => {
+        try {
+          listener(parsed)
+        } catch (err) {
+          this.emit(WebSocketEvent.Error, err as Error)
+        }
+      })
+    })
+  }
+
+  private isTopicMatch(pattern: string, topic: string): boolean {
+    if (pattern === topic) return true
+    if (!pattern.includes("*")) return false
+
+    // 约定：通配符 `*` 表示任意长度任意字符
+    // 例如：`order.*` => 匹配 `order.created`/`order.updated`
+    // TODO: 通配符更复杂规则（如 ?、{a,b}）
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    const regexStr = "^" + escaped.replace(/\*/g, ".*") + "$"
+    const regex = new RegExp(regexStr)
+    return regex.test(topic)
+  }
+
+  private reSyncSubscriptions(): void {
+    const subscriptionCfg = this.currentConfig.subscription
+    if (!subscriptionCfg?.autoResubscribe) return
+    if (typeof subscriptionCfg.buildSubscribeMessage !== "function") return
+
+    this.topicListeners.forEach((_listeners, pattern) => {
+      const subscribeMessage = subscriptionCfg.buildSubscribeMessage?.(pattern)
+      if (subscribeMessage === undefined) return
+      try {
+        const payload =
+          this.currentConfig.serializer.serialize(subscribeMessage)
+        this.sendRaw(payload)
+      } catch (err) {
+        this.emit(WebSocketEvent.Error, err as Error)
+      }
+    })
   }
 
   /**
@@ -296,22 +353,24 @@ export class WebSocketClient extends EventEmitter {
 
       if (!needAck) return sendPromise
 
-      return sendPromise.catch((err) => {
-        // 发送阶段失败：同步失败 ACK 等待，并避免泄漏 pending 记录
-        if (ackId !== null) {
-          const entry = this.pendingAcks.get(ackId)
-          if (entry) {
-            clearTimeout(entry.timer)
-            this.pendingAcks.delete(ackId)
+      return sendPromise
+        .catch((err) => {
+          // 发送阶段失败：同步失败 ACK 等待，并避免泄漏 pending 记录
+          if (ackId !== null) {
+            const entry = this.pendingAcks.get(ackId)
+            if (entry) {
+              clearTimeout(entry.timer)
+              this.pendingAcks.delete(ackId)
+            }
           }
-        }
-        rejectAck?.(err as Error)
-        throw err
-      }).then(() => {
-        // 未成功生成 ack id：等同普通发送
-        if (!ackCfg?.enabled || ackId === null || !ackPromise) return
-        return ackPromise
-      })
+          rejectAck?.(err as Error)
+          throw err
+        })
+        .then(() => {
+          // 未成功生成 ack id：等同普通发送
+          if (!ackCfg?.enabled || ackId === null || !ackPromise) return
+          return ackPromise
+        })
     }
 
     // 连接未就绪：入队，等待连接建立后统一发送
@@ -372,6 +431,68 @@ export class WebSocketClient extends EventEmitter {
 
   updateLastInboundSeq(seq: string | number): void {
     this.lastInboundSeq = seq
+  }
+
+  // TODO: 支持批量订阅
+  subscribe(topic: string, listener: (data: any) => void): () => void {
+    if (!topic) return () => {}
+
+    if (!this.topicListeners.has(topic)) {
+      this.topicListeners.set(topic, new Set())
+      const subscribeMessage =
+        this.currentConfig.subscription?.buildSubscribeMessage?.(topic)
+      if (subscribeMessage !== undefined) {
+        this.send(subscribeMessage).catch((err) => {
+          this.emit(WebSocketEvent.Error, err as Error)
+        })
+      }
+    }
+
+    this.topicListeners.get(topic)!.add(listener)
+    return () => this.unsubscribe(topic, listener)
+  }
+
+  subscribeOnce(topic: string, listener: (data: any) => void): () => void {
+    let disposed = false
+
+    const onceListener = (data: any) => {
+      if (disposed) return
+      disposed = true
+
+      try {
+        listener(data)
+      } finally {
+        this.unsubscribe(topic, onceListener)
+      }
+    }
+
+    this.subscribe(topic, onceListener)
+    return () => {
+      if (disposed) return
+      disposed = true
+      this.unsubscribe(topic, onceListener)
+    }
+  }
+
+  unsubscribe(topic: string, listener?: (data: any) => void): void {
+    const listeners = this.topicListeners.get(topic)
+    if (!listeners) return
+
+    if (listener) {
+      listeners.delete(listener)
+    } else {
+      listeners.clear()
+    }
+
+    if (listeners.size > 0) return
+    this.topicListeners.delete(topic)
+
+    const unsubscribeMessage =
+      this.currentConfig.subscription?.buildUnsubscribeMessage?.(topic)
+    if (unsubscribeMessage === undefined) return
+    this.send(unsubscribeMessage).catch((err) => {
+      this.emit(WebSocketEvent.Error, err as Error)
+    })
   }
 
   close(code?: number, reason?: string): void {

@@ -14,6 +14,7 @@
 - 🔄 运行时更新配置（心跳、重连策略等）
 - ✅ 内置消息 ACK 机制（默认实现 + 完全可自定义）
 - 🔢 消息序列号支持（默认自增，可自定义包装与解析）
+- 🧭 主题订阅（`subscribe/unsubscribe/subscribeOnce`）+ 通配符（`order.*`）+ 自动重订阅
 - 🔍 完整 TypeScript 类型定义
 
 ---
@@ -111,6 +112,8 @@ export interface IWebSocketClient {
   sendWithAck(data: any, priority?: number): Promise<void>
   getLastInboundSeq(): string | number | undefined
   updateLastInboundSeq(seq: string | number): void
+  subscribe(topic: string, listener: (data: any) => void): () => void
+  unsubscribe(topic: string, listener?: (data: any) => void): void
   close(code?: number, reason?: string): void
   reconnect(): void
   on(event: WebSocketEvent, listener: (data: any) => void): void
@@ -143,6 +146,21 @@ export interface IWebSocketClient {
 - **`reconnect()`**
   - 立即重连一次（会重置重连计数和退避延迟）。
   - `close()` 属于主动关闭，不会自动重连；非主动断开（如服务端关闭/网络中断）会按重连策略自动重连。
+
+- **`subscribe(topic, listener)`**
+  - 订阅某个 topic 的消息，返回取消订阅函数。
+  - topic 支持通配符 `*`：
+    - `order.*` 匹配 `order.created` / `order.updated` 等任意后缀
+  - 默认会通过 `subscription.extractTopic` 从入站消息提取 topic（默认读取 `message.topic`）并分发到对应 listener。
+  - 如果配置了 `subscription.buildSubscribeMessage`，会在首次订阅 topic 时发送订阅报文。
+
+- **`unsubscribe(topic, listener?)`**
+  - 取消某个 topic 的订阅。
+  - 传 `listener` 时仅移除该监听器；不传则移除该 topic 下所有监听器。
+  - 如果配置了 `subscription.buildUnsubscribeMessage`，在该 topic 没有监听器后会发送取消订阅报文。
+
+- **`subscribeOnce(topic, listener)`**
+  - 订阅某个 topic 的消息，但只触发一次，触发后会自动退订。
 
 - **事件监听**
 
@@ -196,6 +214,8 @@ export interface WebSocketConfig {
 
   // 消息序列号
   sequence?: SequenceStrategy
+  // 主题订阅
+  subscription?: SubscriptionStrategy
 }
 ```
 
@@ -314,6 +334,43 @@ export type SequenceStrategy = {
 - `extractInboundSeq`: 从 `message.seq` 中提取序列号。
 
 > 库内部只负责“生成/包装/解析”序列号，不做强制的乱序丢弃；你可以在 `message` 监听回调中结合 `seq` 做业务上的顺序控制。
+
+### 4. 主题订阅配置 SubscriptionStrategy
+
+```ts
+export type SubscriptionStrategy = {
+  extractTopic?: (message: any) => string | null
+  buildSubscribeMessage?: (topic: string) => any
+  buildUnsubscribeMessage?: (topic: string) => any
+  autoResubscribe?: boolean
+}
+```
+
+默认实现：
+
+- `extractTopic`: 读取 `message.topic`（字符串）
+- `autoResubscribe: true`
+- 不会默认发送订阅/取消订阅报文（需自行提供 `buildSubscribeMessage/buildUnsubscribeMessage`）
+
+示例：
+
+```ts
+const manager = createWebSocketManager({
+  subscription: {
+    buildSubscribeMessage: (topic) => ({ type: "SUBSCRIBE", topic }),
+    buildUnsubscribeMessage: (topic) => ({ type: "UNSUBSCRIBE", topic }),
+    autoResubscribe: true,
+  },
+})
+
+const client = manager.connect("wss://api.example.com")
+const dispose = client.subscribe("order.updated", (msg) => {
+  console.log("order event:", msg)
+})
+
+// 也可以主动取消
+dispose()
+```
 
 ---
 
