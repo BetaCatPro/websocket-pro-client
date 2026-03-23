@@ -114,6 +114,50 @@ export type SubscriptionStrategy = {
      */
     autoResubscribe?: boolean;
 };
+/**
+ * WebSocket 客户端运行状态枚举
+ */
+export declare enum WebSocketClientState {
+    Connecting = "connecting",
+    Open = "open",
+    Reconnecting = "reconnecting",
+    Closed = "closed",
+    OverMaxReconnectAttempts = "overMaxReconnectAttempts"
+}
+/**
+ * WebSocket 客户端统计信息（用于观测/调试）
+ */
+export type WebSocketClientStats = Readonly<{
+    sentCount: number;
+    receivedCount: number;
+    errorCount: number;
+    reconnectScheduledCount: number;
+    ackTimeoutCount: number;
+    reconnectAttempts: number;
+    pendingAcksCount: number;
+    messageQueueLength: number;
+    subscribedTopicCount: number;
+    subscriptionListenerCount: number;
+    lastInboundSeq?: string | number;
+    socketReadyState: number | null;
+    lastHeartbeatLatency?: number;
+    lastErrorAt?: number;
+    lastCloseCode?: number;
+    lastCloseReason?: string;
+    lastCloseAt?: number;
+}>;
+export type ResetStatsOptions = Readonly<{
+    /**
+     * 是否重置计数类指标（sentCount/errorCount/...）
+     * 默认 true
+     */
+    resetCounters?: boolean;
+    /**
+     * 是否重置最近事件字段（lastErrorAt/lastClose...）
+     * 默认 true
+     */
+    resetLastEvents?: boolean;
+}>;
 export interface WebSocketConfig {
     /** 最大重连尝试次数 (默认: 10) */
     maxReconnectAttempts?: number;
@@ -169,6 +213,9 @@ export interface IWebSocketClient {
      */
     subscribeOnce(topic: string, listener: (data: any) => void): () => void;
     unsubscribe(topic: string, listener?: (data: any) => void): void;
+    getState(): WebSocketClientState;
+    getStats(): WebSocketClientStats;
+    resetStats(options?: ResetStatsOptions): void;
     close(code?: number, reason?: string): void;
     reconnect(): void;
     on(event: WebSocketEvent, listener: (data: any) => void): void;

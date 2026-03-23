@@ -1,12 +1,15 @@
 import { DEFAULT_CONFIG } from "./config"
+import { WebSocketClientState } from "./types"
 import { WebSocketManager } from "./core/WebSocketManager"
 import { WebSocketClientError, WebSocketErrorCode } from "./constants/errors"
 import { deepMerge } from "./utils"
 import type {
   WebSocketConfig,
   WebSocketEvent,
+  WebSocketClientStats,
   IWebSocketManager,
   IWebSocketClient,
+  SubscriptionStrategy,
   Serializer,
 } from "./types"
 
@@ -68,10 +71,13 @@ export const MsgPackSerializer: Serializer = {
 export type {
   WebSocketConfig,
   WebSocketEvent,
+  WebSocketClientStats,
   IWebSocketManager,
   IWebSocketClient,
+  SubscriptionStrategy,
   Serializer,
 }
+export { WebSocketClientState }
 export { HeartbeatMessage, HeartbeatEvent } from "./constants/heartbeat"
 export { HeartbeatTimerMode } from "./constants/heartbeat"
 

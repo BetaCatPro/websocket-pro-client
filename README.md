@@ -14,7 +14,8 @@
 - 🔄 运行时更新配置（心跳、重连策略等）
 - ✅ 内置消息 ACK 机制（默认实现 + 完全可自定义）
 - 🔢 消息序列号支持（默认自增，可自定义包装与解析）
-- 🧭 主题订阅（`subscribe/unsubscribe/subscribeOnce`）+ 通配符（`order.*`）+ 自动重订阅
+- 🧭 消息主题/类型订阅（支持通配符（`order.*`）+ 自动重订阅）
+- 📊 运行状态与统计
 - 🔍 完整 TypeScript 类型定义
 
 ---
@@ -114,6 +115,9 @@ export interface IWebSocketClient {
   updateLastInboundSeq(seq: string | number): void
   subscribe(topic: string, listener: (data: any) => void): () => void
   unsubscribe(topic: string, listener?: (data: any) => void): void
+  getState(): WebSocketClientState
+  getStats(): WebSocketClientStats
+  resetStats(options?: ResetStatsOptions): void
   close(code?: number, reason?: string): void
   reconnect(): void
   on(event: WebSocketEvent, listener: (data: any) => void): void
@@ -139,6 +143,46 @@ export interface IWebSocketClient {
 - **`updateLastInboundSeq(seq)`**
   - 手动更新最后一次入站 `seq`。
   - 常用于补拉：当你已经把本地数据处理到最新 `seq` 后，同步回 client，避免后续补拉仍使用旧值。
+
+- **`getState()`**
+  - 获取当前客户端运行状态（`WebSocketClientState` 枚举）：
+    - `WebSocketClientState.Connecting`
+    - `WebSocketClientState.Open`
+    - `WebSocketClientState.Reconnecting`
+    - `WebSocketClientState.Closed`
+    - `WebSocketClientState.OverMaxReconnectAttempts`
+
+- **`getStats()`**
+  - 获取运行统计信息，用于调试与监控：
+    - `sentCount`：发送消息总数
+    - `receivedCount`：接收消息总数
+    - `errorCount`：错误总数
+    - `reconnectScheduledCount`：触发重连调度总数
+    - `ackTimeoutCount`：ACK 最终超时次数
+    - `reconnectAttempts`：重连尝试次数
+    - `pendingAcksCount`：等待 ACK 的数量
+    - `messageQueueLength`：离线待发送队列长度
+    - `subscribedTopicCount`：订阅主题数量
+    - `subscriptionListenerCount`：订阅监听器总数
+    - `lastInboundSeq`：最近一次入站 seq
+    - `socketReadyState`：底层 WebSocket readyState
+    - `lastHeartbeatLatency`：最近一次心跳延迟（ms）
+    - `lastErrorAt`：最近一次错误时间戳（ms）
+    - `lastCloseCode/lastCloseReason/lastCloseAt`：最近一次关闭信息
+
+- **`resetStats()`**
+  - 重置统计指标计数与最近状态字段（如 `sentCount/errorCount/lastErrorAt` 等）。
+  - 不会影响连接状态、订阅关系、待 ACK 列表和消息队列。
+  - 支持可选参数：
+    - `resetCounters`：是否重置计数指标（默认 `true`）
+    - `resetLastEvents`：是否重置最近事件字段（默认 `true`）
+
+```ts
+type ResetStatsOptions = {
+  resetCounters?: boolean
+  resetLastEvents?: boolean
+}
+```
 
 - **`close(code?, reason?)`**
   - 主动关闭当前连接，并清理所有等待中的 ACK。
