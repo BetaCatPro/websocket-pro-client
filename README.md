@@ -195,6 +195,9 @@ type ResetStatsOptions = {
   - 订阅某个 topic 的消息，返回取消订阅函数。
   - topic 支持通配符 `*`：
     - `order.*` 匹配 `order.created` / `order.updated` 等任意后缀
+  - 也支持：
+    - `?`：匹配任意单个字符（如 `order.updat?d`）
+    - `{a,b}`：匹配多个备选（如 `order.{created,updated}`）
   - 默认会通过 `subscription.extractTopic` 从入站消息提取 topic（默认读取 `message.topic`）并分发到对应 listener。
   - 如果配置了 `subscription.buildSubscribeMessage`，会在首次订阅 topic 时发送订阅报文。
 

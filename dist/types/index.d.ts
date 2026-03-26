@@ -208,11 +208,13 @@ export interface IWebSocketClient {
      */
     updateLastInboundSeq(seq: string | number): void;
     subscribe(topic: string, listener: (data: any) => void): () => void;
+    subscribe(topics: string[], listener: (data: any) => void): () => void;
     /**
      * 订阅某个 topic 的消息（只触发一次），触发后会自动退订
      */
     subscribeOnce(topic: string, listener: (data: any) => void): () => void;
     unsubscribe(topic: string, listener?: (data: any) => void): void;
+    unsubscribe(topics: string[], listener?: (data: any) => void): void;
     getState(): WebSocketClientState;
     getStats(): WebSocketClientStats;
     resetStats(options?: ResetStatsOptions): void;

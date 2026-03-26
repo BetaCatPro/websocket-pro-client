@@ -9,7 +9,7 @@ import {
 } from "../types"
 import { HeartbeatEvent, HeartbeatMessage } from "../constants/heartbeat"
 import { DEFAULT_CONFIG } from "../config"
-import { deepMerge, isEqual } from "../utils"
+import { deepMerge, isEqual, matchTopicPattern } from "../utils"
 import { WebSocketClientError, WebSocketErrorCode } from "../constants/errors"
 import { getLogger } from "../logger"
 
@@ -216,7 +216,7 @@ export class WebSocketClient extends EventEmitter {
     if (this.topicListeners.size === 0) return
 
     this.topicListeners.forEach((listeners, pattern) => {
-      if (!this.isTopicMatch(pattern, topic)) return
+      if (!matchTopicPattern(pattern, topic)) return
 
       listeners.forEach((listener) => {
         try {
@@ -226,19 +226,6 @@ export class WebSocketClient extends EventEmitter {
         }
       })
     })
-  }
-
-  private isTopicMatch(pattern: string, topic: string): boolean {
-    if (pattern === topic) return true
-    if (!pattern.includes("*")) return false
-
-    // 约定：通配符 `*` 表示任意长度任意字符
-    // 例如：`order.*` => 匹配 `order.created`/`order.updated`
-    // TODO: 通配符更复杂规则（如 ?、{a,b}）
-    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-    const regexStr = "^" + escaped.replace(/\*/g, ".*") + "$"
-    const regex = new RegExp(regexStr)
-    return regex.test(topic)
   }
 
   private reSyncSubscriptions(): void {
@@ -468,7 +455,8 @@ export class WebSocketClient extends EventEmitter {
       return WebSocketClientState.OverMaxReconnectAttempts
     if (this.reconnectTimer) return WebSocketClientState.Reconnecting
     if (readyState === WebSocket.OPEN) return WebSocketClientState.Open
-    if (readyState === WebSocket.CONNECTING) return WebSocketClientState.Connecting
+    if (readyState === WebSocket.CONNECTING)
+      return WebSocketClientState.Connecting
     return WebSocketClientState.Closed
   }
 
@@ -500,10 +488,7 @@ export class WebSocketClient extends EventEmitter {
   }
 
   resetStats(options: ResetStatsOptions = {}): void {
-    const {
-      resetCounters = true,
-      resetLastEvents = true,
-    } = options
+    const { resetCounters = true, resetLastEvents = true } = options
 
     if (resetCounters) {
       this.sentCount = 0
@@ -522,8 +507,20 @@ export class WebSocketClient extends EventEmitter {
     }
   }
 
-  // TODO: 支持批量订阅
-  subscribe(topic: string, listener: (data: any) => void): () => void {
+  subscribe(topic: string, listener: (data: any) => void): () => void
+  subscribe(topics: string[], listener: (data: any) => void): () => void
+  subscribe(
+    topicOrTopics: string | string[],
+    listener: (data: any) => void,
+  ): () => void {
+    if (Array.isArray(topicOrTopics)) {
+      const disposers = topicOrTopics
+        .filter(Boolean)
+        .map((t) => this.subscribe(t, listener))
+      return () => disposers.forEach((d) => d())
+    }
+
+    const topic = topicOrTopics
     if (!topic) return () => {}
 
     if (!this.topicListeners.has(topic)) {
@@ -563,7 +560,20 @@ export class WebSocketClient extends EventEmitter {
     }
   }
 
-  unsubscribe(topic: string, listener?: (data: any) => void): void {
+  unsubscribe(topic: string, listener?: (data: any) => void): void
+  unsubscribe(topics: string[], listener?: (data: any) => void): void
+  unsubscribe(
+    topicOrTopics: string | string[],
+    listener?: (data: any) => void,
+  ): void {
+    if (Array.isArray(topicOrTopics)) {
+      topicOrTopics.filter(Boolean).forEach((t) => {
+        this.unsubscribe(t, listener)
+      })
+      return
+    }
+
+    const topic = topicOrTopics
     const listeners = this.topicListeners.get(topic)
     if (!listeners) return
 
