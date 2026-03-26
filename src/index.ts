@@ -1,9 +1,11 @@
 import { DEFAULT_CONFIG } from "./config"
-import { WebSocketClientState } from "./types"
+import { OfflineQueueDropStrategy, WebSocketClientState } from "./types"
 import { WebSocketManager } from "./core/WebSocketManager"
 import { WebSocketClientError, WebSocketErrorCode } from "./constants/errors"
 import { deepMerge } from "./utils"
 import type {
+  OfflineQueueConfig,
+  ResetStatsOptions,
   WebSocketConfig,
   WebSocketEvent,
   WebSocketClientStats,
@@ -69,6 +71,8 @@ export const MsgPackSerializer: Serializer = {
 
 // 导出所有类型和接口
 export type {
+  OfflineQueueConfig,
+  ResetStatsOptions,
   WebSocketConfig,
   WebSocketEvent,
   WebSocketClientStats,
@@ -77,6 +81,7 @@ export type {
   SubscriptionStrategy,
   Serializer,
 }
+export { OfflineQueueDropStrategy }
 export { WebSocketClientState }
 export { HeartbeatMessage, HeartbeatEvent } from "./constants/heartbeat"
 export { HeartbeatTimerMode } from "./constants/heartbeat"

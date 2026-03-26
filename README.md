@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/websocket-pro-client)](https://www.npmjs.com/package/websocket-pro-client)
 [![test coverage](https://img.shields.io/badge/coverage-100%25-success)](https://github.com/BetaCatPro/websocket-pro-client/actions)
 
-高性能 WebSocket 客户端，专为现代 Web 应用设计，内置自动重连、心跳、消息优先级调度、连接池管理，以及**可配置的消息 ACK 与序列号机制**。
+面向现代 Web 应用的高性能 WebSocket 客户端：开箱即用的自动重连与心跳保活，灵活可配的 ACK/序列号与主题订阅（支持通配符、自动重订阅），再加上离线队列策略与可观测状态统计，让你的实时通信在弱网、抖动和复杂业务场景下依然稳定、可控、易扩展。
 
 ### 特性一览
 
@@ -15,6 +15,7 @@
 - ✅ 内置消息 ACK 机制（默认实现 + 完全可自定义）
 - 🔢 消息序列号支持（默认自增，可自定义包装与解析）
 - 🧭 消息主题/类型订阅（支持通配符（`order.*`）+ 自动重订阅）
+- 📴 离线消息队列
 - 📊 运行状态与统计
 - 🔍 完整 TypeScript 类型定义
 
@@ -263,6 +264,9 @@ export interface WebSocketConfig {
   sequence?: SequenceStrategy
   // 主题订阅
   subscription?: SubscriptionStrategy
+
+  // 离线消息队列
+  offlineQueue?: OfflineQueueConfig
 }
 ```
 
@@ -418,6 +422,28 @@ const dispose = client.subscribe("order.updated", (msg) => {
 // 也可以主动取消
 dispose()
 ```
+
+### 5. 离线消息队列配置 OfflineQueueConfig
+
+```ts
+export type OfflineQueueConfig = {
+  enabled?: boolean
+  maxQueueSize?: number
+  dropStrategy?: OfflineQueueDropStrategy
+  messageTTL?: number
+}
+```
+
+当底层 `WebSocket` 还没进入 `OPEN` 状态时（断线/重连中/初始化阶段），`send/sendWithAck` 会把消息暂存到离线队列；当连接恢复后会按队列顺序发送。
+
+队列行为：
+
+- `maxQueueSize`：队列容量上限（默认 `1000`），超过后按 `dropStrategy` 处理
+- `dropStrategy`：
+  - `OfflineQueueDropStrategy.DropOldest`：丢弃队列最老消息，保留新消息
+  - `OfflineQueueDropStrategy.DropNewest`：丢弃新消息
+  - `OfflineQueueDropStrategy.Reject`：丢弃并立即 reject 新消息 Promise
+- `messageTTL`（毫秒）：过期消息会被移除并 reject（错误码 `OfflineQueueTTLExpired`）
 
 ---
 

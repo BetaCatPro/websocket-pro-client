@@ -2,6 +2,7 @@ import { Heartbeat } from "./Heartbeat"
 import { TaskScheduler } from "./TaskScheduler"
 import { EventEmitter } from "./EventEmitter"
 import {
+  OfflineQueueDropStrategy,
   ResetStatsOptions,
   WebSocketClientState,
   WebSocketConfig,
@@ -20,12 +21,14 @@ export class WebSocketClient extends EventEmitter {
   private reconnectTimer?: ReturnType<typeof setTimeout>
   private isManualClose = false
   private isOverMaxReconnectAttempts = false
+  private isClosingForReconnect = false
   private readonly messageQueue: Array<{
     data: any
     priority: number
     needAck: boolean
     resolve: () => void
     reject: (err: Error) => void
+    createdAt: number
   }> = []
   private heartbeat?: Heartbeat
   private readonly scheduler: TaskScheduler
@@ -294,11 +297,79 @@ export class WebSocketClient extends EventEmitter {
   }
 
   private flushMessageQueue(): void {
+    const ttl = this.currentConfig.offlineQueue?.messageTTL
     while (this.messageQueue.length > 0) {
-      const { data, priority, needAck, resolve, reject } =
-        this.messageQueue.shift()!
+      if (ttl !== undefined && ttl > 0) {
+        const now = Date.now()
+        const next = this.messageQueue[0]
+        if (now - next.createdAt > ttl) {
+          const entry = this.messageQueue.shift()!
+          entry.reject(new WebSocketClientError(WebSocketErrorCode.OfflineQueueTTLExpired))
+          continue
+        }
+      }
+
+      const { data, priority, needAck, resolve, reject } = this.messageQueue.shift()!
       this.sendInternal(data, priority, needAck).then(resolve).catch(reject)
     }
+  }
+
+  private enqueueOfflineMessage(item: {
+    data: any
+    priority: number
+    needAck: boolean
+    resolve: () => void
+    reject: (err: Error) => void
+    createdAt: number
+  }): void {
+    const cfg = this.currentConfig.offlineQueue
+    if (!cfg?.enabled) {
+      this.messageQueue.push(item)
+      return
+    }
+
+    const now = Date.now()
+    const ttl = cfg.messageTTL
+    if (ttl !== undefined && ttl > 0) {
+      while (this.messageQueue.length > 0) {
+        const next = this.messageQueue[0]
+        if (now - next.createdAt <= ttl) break
+        const expired = this.messageQueue.shift()!
+        expired.reject(
+          new WebSocketClientError(WebSocketErrorCode.OfflineQueueTTLExpired),
+        )
+      }
+    }
+
+    const maxQueueSize = cfg.maxQueueSize ?? Number.POSITIVE_INFINITY
+    if (maxQueueSize <= 0) {
+      item.reject(new WebSocketClientError(WebSocketErrorCode.OfflineQueueOverflow))
+      return
+    }
+
+    if (this.messageQueue.length < maxQueueSize) {
+      this.messageQueue.push(item)
+      return
+    }
+
+    const strategy = cfg.dropStrategy ?? OfflineQueueDropStrategy.Reject
+
+    if (
+      strategy === OfflineQueueDropStrategy.Reject ||
+      strategy === OfflineQueueDropStrategy.DropNewest
+    ) {
+      item.reject(new WebSocketClientError(WebSocketErrorCode.OfflineQueueOverflow))
+      return
+    }
+
+    // dropOldest
+    while (this.messageQueue.length >= maxQueueSize) {
+      const dropped = this.messageQueue.shift()!
+      dropped.reject(
+        new WebSocketClientError(WebSocketErrorCode.OfflineQueueOverflow),
+      )
+    }
+    this.messageQueue.push(item)
   }
 
   private sendInternal(
@@ -389,7 +460,15 @@ export class WebSocketClient extends EventEmitter {
 
     // 连接未就绪：入队，等待连接建立后统一发送
     return new Promise((resolve, reject) => {
-      this.messageQueue.push({ data, priority, needAck, resolve, reject })
+      const createdAt = Date.now()
+      this.enqueueOfflineMessage({
+        data,
+        priority,
+        needAck,
+        resolve,
+        reject,
+        createdAt,
+      })
     })
   }
 
@@ -605,6 +684,14 @@ export class WebSocketClient extends EventEmitter {
       entry.reject(new WebSocketClientError(WebSocketErrorCode.ClosedBeforeAck))
       this.pendingAcks.delete(id)
     })
+
+    if (!this.isClosingForReconnect) {
+      while (this.messageQueue.length > 0) {
+        const entry = this.messageQueue.shift()!
+        entry.reject(new WebSocketClientError(WebSocketErrorCode.ClosedBeforeSend))
+      }
+    }
+
     this.socket?.close(code, reason)
     this.socket = null
   }
@@ -614,8 +701,10 @@ export class WebSocketClient extends EventEmitter {
     this.reconnectTimer = undefined
     this.reconnectAttempts = 0
     this.isOverMaxReconnectAttempts = false
+    this.isClosingForReconnect = true
     this.close()
     this.isManualClose = false
+    this.isClosingForReconnect = false
     this.connect()
   }
 

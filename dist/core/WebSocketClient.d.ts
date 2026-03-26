@@ -10,6 +10,7 @@ export declare class WebSocketClient extends EventEmitter {
     private reconnectTimer?;
     private isManualClose;
     private isOverMaxReconnectAttempts;
+    private isClosingForReconnect;
     private readonly messageQueue;
     private heartbeat?;
     private readonly scheduler;
@@ -42,6 +43,7 @@ export declare class WebSocketClient extends EventEmitter {
     private sendHeartbeat;
     private scheduleReconnect;
     private flushMessageQueue;
+    private enqueueOfflineMessage;
     private sendInternal;
     private handleAckTimeout;
     send(data: any, priority?: number): Promise<void>;

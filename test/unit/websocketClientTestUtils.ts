@@ -1,7 +1,7 @@
 import { vi } from 'vitest'
 
 import { WebSocketClient } from '../../src/core/WebSocketClient'
-import { WebSocketConfig } from '../../src/types'
+import { OfflineQueueDropStrategy, WebSocketConfig } from '../../src/types'
 
 export class FakeWebSocket {
   static CONNECTING = 0
@@ -95,6 +95,12 @@ export const BASE_CONFIG: Required<WebSocketConfig> = {
     pingMessage: 'PING',
     pongMessage: 'PONG',
     timerMode: 'main',
+  },
+  offlineQueue: {
+    enabled: true,
+    maxQueueSize: 1000,
+    dropStrategy: OfflineQueueDropStrategy.DropOldest,
+    messageTTL: undefined,
   },
 }
 
