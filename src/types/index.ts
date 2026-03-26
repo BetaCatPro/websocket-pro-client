@@ -121,6 +121,38 @@ export type SubscriptionStrategy = {
 }
 
 /**
+ * 离线消息队列策略
+ */
+export enum OfflineQueueDropStrategy {
+  DropOldest = 'dropOldest',
+  DropNewest = 'dropNewest',
+  Reject = 'reject',
+}
+
+export type OfflineQueueConfig = {
+  /**
+   * 是否启用离线队列（socket 非 OPEN 时入队）
+   * 默认 true
+   */
+  enabled?: boolean
+  /**
+   * 队列容量上限（默认 1000）
+   * - Infinity 表示不限制
+   */
+  maxQueueSize?: number
+  /**
+   * 超出容量后的处理策略
+   * 默认 OfflineQueueDropStrategy.DropOldest
+   */
+  dropStrategy?: OfflineQueueDropStrategy
+  /**
+   * 消息 TTL（毫秒），过期会从队列移除并 reject 对应 Promise
+   * 默认不启用 TTL
+   */
+  messageTTL?: number
+}
+
+/**
  * WebSocket 客户端运行状态枚举
  */
 export enum WebSocketClientState {
@@ -192,6 +224,8 @@ export interface WebSocketConfig {
   sequence?: SequenceStrategy
   /** 主题订阅配置 */
   subscription?: SubscriptionStrategy
+  /** 离线消息队列配置 */
+  offlineQueue?: OfflineQueueConfig
   /** 是否需要心跳 (默认: true) */
   isNeedHeartbeat?: boolean
   /** 心跳配置 */
@@ -220,11 +254,13 @@ export interface IWebSocketClient {
    */
   updateLastInboundSeq(seq: string | number): void
   subscribe(topic: string, listener: (data: any) => void): () => void
+  subscribe(topics: string[], listener: (data: any) => void): () => void
   /**
    * 订阅某个 topic 的消息（只触发一次），触发后会自动退订
    */
   subscribeOnce(topic: string, listener: (data: any) => void): () => void
   unsubscribe(topic: string, listener?: (data: any) => void): void
+  unsubscribe(topics: string[], listener?: (data: any) => void): void
   getState(): WebSocketClientState
   getStats(): WebSocketClientStats
   resetStats(options?: ResetStatsOptions): void

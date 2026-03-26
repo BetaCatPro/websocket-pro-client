@@ -59,3 +59,5 @@ export const isEqual = (target: any, source: any): boolean => {
 
   return true
 }
+
+export { matchTopicPattern } from './topicPattern'

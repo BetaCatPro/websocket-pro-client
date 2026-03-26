@@ -96,6 +96,79 @@ describe('WebSocketClient subscription', () => {
     })
   })
 
+  it('supports ? wildcard topic matching', async () => {
+    const client = createClient()
+    const ws = FakeWebSocket.instances[0]
+    ws.triggerOpen()
+
+    const handler = vi.fn()
+    client.subscribe('order.updat?d', handler)
+
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.updated', payload: { id: 10 } }),
+    )
+    await Promise.resolve()
+
+    expect(handler).toHaveBeenCalledTimes(1)
+    expect(handler).toHaveBeenCalledWith({
+      topic: 'order.updated',
+      payload: { id: 10 },
+    })
+  })
+
+  it('supports {a,b} alternative topic matching', async () => {
+    const client = createClient()
+    const ws = FakeWebSocket.instances[0]
+    ws.triggerOpen()
+
+    const handler = vi.fn()
+    client.subscribe('order.{created,updated}', handler)
+
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.created', payload: { id: 1 } }),
+    )
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.updated', payload: { id: 2 } }),
+    )
+    await Promise.resolve()
+
+    expect(handler).toHaveBeenCalledTimes(2)
+    expect(handler).toHaveBeenNthCalledWith(1, {
+      topic: 'order.created',
+      payload: { id: 1 },
+    })
+    expect(handler).toHaveBeenNthCalledWith(2, {
+      topic: 'order.updated',
+      payload: { id: 2 },
+    })
+  })
+
+  it('supports batch subscribe with array', async () => {
+    const client = createClient()
+    const ws = FakeWebSocket.instances[0]
+    ws.triggerOpen()
+
+    const handler = vi.fn()
+    const dispose = client.subscribe(['order.created', 'order.updated'], handler)
+
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.created', payload: { id: 100 } }),
+    )
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.updated', payload: { id: 200 } }),
+    )
+    await Promise.resolve()
+
+    expect(handler).toHaveBeenCalledTimes(2)
+    dispose()
+
+    ws.triggerMessage(
+      JSON.stringify({ topic: 'order.updated', payload: { id: 300 } }),
+    )
+    await Promise.resolve()
+    expect(handler).toHaveBeenCalledTimes(2)
+  })
+
   it('subscribeOnce triggers only once', async () => {
     const client = createClient()
     const ws = FakeWebSocket.instances[0]

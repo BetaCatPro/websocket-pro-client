@@ -1,4 +1,4 @@
-import { WebSocketConfig } from "../types"
+import { OfflineQueueDropStrategy, WebSocketConfig } from "../types"
 import { HeartbeatMessage, HeartbeatTimerMode } from "../constants/heartbeat"
 
 // 默认配置常量
@@ -72,6 +72,12 @@ export const DEFAULT_CONFIG: Required<WebSocketConfig> = {
       return null
     },
     autoResubscribe: true,
+  },
+  offlineQueue: {
+    enabled: true,
+    maxQueueSize: 1000,
+    dropStrategy: OfflineQueueDropStrategy.DropOldest,
+    messageTTL: undefined,
   },
   isNeedHeartbeat: true,
   heartbeat: {
